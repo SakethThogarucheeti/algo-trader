@@ -89,18 +89,19 @@ class KiteIngestor(Component):
         await self._stream.connect()
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=_CONNECT_TIMEOUT_SECS)
-        except TimeoutError:
+        except TimeoutError as err:
             raise RuntimeError(
                 f"KiteIngestor: WebSocket did not connect within {_CONNECT_TIMEOUT_SECS}s — "
                 "check broker credentials and network"
-            )
+            ) from err
         tokens = list(self._token_type.keys())
         if tokens:
             await self._stream.subscribe(tokens)
             logger.info("KiteIngestor: connected and subscribed to %d tokens", len(tokens))
         else:
             logger.warning(
-                "KiteIngestor: no instruments configured — connected but not subscribed to any tokens"
+                "KiteIngestor: no instruments configured — "
+                "connected but not subscribed to any tokens"
             )
 
     async def _run(self) -> None:

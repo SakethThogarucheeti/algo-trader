@@ -246,9 +246,9 @@ def test_vwap_resets_at_new_session_boundary() -> None:
 
     # The last row's VWAP must equal its own close (first bar of new session)
     vwap_last = df["vwap"][-1]
-    assert vwap_last == pytest.approx(
-        100.0
-    ), f"VWAP should reset to the first bar's price at session open, got {vwap_last}"
+    assert vwap_last == pytest.approx(100.0), (
+        f"VWAP should reset to the first bar's price at session open, got {vwap_last}"
+    )
 
 
 def test_vwap_accumulates_within_session() -> None:

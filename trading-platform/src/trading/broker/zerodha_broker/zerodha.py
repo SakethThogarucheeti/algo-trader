@@ -4,13 +4,13 @@ import asyncio
 import logging
 from datetime import datetime
 
-_ORDER_TIMEOUT_SECS = 10.0  # max time to wait for Zerodha REST API to respond
-
 import polars as pl
 
 from trading.broker.base.broker import Broker
 from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
 from trading.core.schemas import OrderType, Side
+
+_ORDER_TIMEOUT_SECS = 10.0  # max time to wait for Zerodha REST API to respond
 
 logger = logging.getLogger(__name__)
 
@@ -117,11 +117,11 @@ class ZerodhaBroker(Broker):
                 ),
                 timeout=_ORDER_TIMEOUT_SECS,
             )
-        except TimeoutError:
+        except TimeoutError as err:
             raise RuntimeError(
                 f"ZerodhaBroker: place_order timed out after {_ORDER_TIMEOUT_SECS}s "
                 f"for {transaction_type} {symbol} x{qty}"
-            )
+            ) from err
         logger.info(
             "ZerodhaBroker: placed %s %s x%d → order_id=%s",
             transaction_type,

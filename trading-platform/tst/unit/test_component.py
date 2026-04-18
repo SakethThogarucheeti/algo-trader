@@ -11,12 +11,6 @@ from __future__ import annotations
 import pytest
 from anyio import create_task_group, sleep, sleep_forever
 
-# BaseExceptionGroup is a builtin on Python 3.11+; use the backport on 3.10.
-try:
-    BaseExceptionGroup  # type: ignore[used-before-def]
-except NameError:
-    from exceptiongroup import BaseExceptionGroup  # type: ignore[no-redef]
-
 from trading.engine.component import Component, ComponentState
 
 # ---------------------------------------------------------------------------

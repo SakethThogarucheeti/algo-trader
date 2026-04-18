@@ -298,7 +298,7 @@ async def test_fill_updates_position(engine: AsyncEngine, bus: MessageBus) -> No
 
 
 async def test_broker_timeout_marks_order_rejected(engine: AsyncEngine, bus: MessageBus) -> None:
-    """A broker that raises RuntimeError (the timeout wrapper's output) must mark the order REJECTED."""
+    """A broker that raises RuntimeError must mark the order REJECTED."""
     received: list[OrderEvent] = []
     bus.subscribe("orders", OrderEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
 
@@ -323,7 +323,7 @@ async def test_broker_timeout_marks_order_rejected(engine: AsyncEngine, bus: Mes
 async def test_stale_fill_for_unknown_order_is_skipped(
     engine: AsyncEngine, bus: MessageBus
 ) -> None:
-    """A fill for a kite_order_id not in the DB must be silently dropped (no exception, no position update)."""
+    """A fill for an unknown kite_order_id must be silently dropped."""
     exec_ = make_executor(engine, bus)
 
     # Call handle_fill with a kite_order_id that was never persisted

@@ -208,9 +208,9 @@ def _capture_settings_warnings(**kwargs: object) -> list[str]:
 def test_empty_access_token_live_mode_emits_warning() -> None:
     """Instantiating Settings with paper_trading=False and no access token must log a warning."""
     msgs = _capture_settings_warnings(paper_trading=False, zerodha_access_token="")
-    assert any(
-        "access_token" in m.lower() for m in msgs
-    ), "Expected a WARNING about empty zerodha_access_token in live mode"
+    assert any("access_token" in m.lower() for m in msgs), (
+        "Expected a WARNING about empty zerodha_access_token in live mode"
+    )
 
 
 def test_non_empty_access_token_live_mode_no_warning() -> None:

@@ -101,7 +101,7 @@ class Component(ABC):
         polling components.
         """
 
-    async def _teardown(self) -> None:
+    async def _teardown(self) -> None:  # noqa: B027
         """
         Optional cleanup. Called after _run() exits, before state → STOPPED.
 

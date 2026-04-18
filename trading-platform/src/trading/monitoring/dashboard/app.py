@@ -83,7 +83,9 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
         )
         return HTMLResponse(
             f"<table class='data-table'>"
-            f"<thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>Avg Price</th><th>Updated</th></tr></thead>"
+            "<thead><tr>"
+            "<th>Symbol</th><th>Type</th><th>Qty</th><th>Avg Price</th><th>Updated</th>"
+            "</tr></thead>"
             f"<tbody>{rows_html}</tbody>"
             f"</table>"
         )

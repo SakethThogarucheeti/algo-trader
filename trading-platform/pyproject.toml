@@ -46,6 +46,9 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tst"]
 
+[project.scripts]
+build = "trading.ci:main"
+
 [tool.uv]
 package = true
 
