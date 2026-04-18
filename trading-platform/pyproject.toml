@@ -3,7 +3,7 @@ name = "trading-platform"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "anyio>=4.12.1",
     "apscheduler>=3.10",
@@ -52,7 +52,7 @@ package = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 fix = true
 
 [tool.ruff.lint]

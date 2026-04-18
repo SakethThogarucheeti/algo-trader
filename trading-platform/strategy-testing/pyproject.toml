@@ -2,7 +2,7 @@
 name = "algo-strategy-testing"
 version = "0.1.0"
 description = "Backtesting, Monte Carlo, walk-forward and harness framework for algo-trader"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "trading-platform",
     "plotly>=5.20",
