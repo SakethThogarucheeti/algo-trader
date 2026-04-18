@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.venv/
+
+# Environment
+.env
+.env.*
+
+# Caches
+.ruff_cache/
+.pytest_cache/
+
+# Editor
+.vscode/
+.claude/
+
+# Test session results
+strategy-testing/session_results/
