@@ -31,6 +31,9 @@ services:
     environment:
       POSTGRES_URL: postgresql+asyncpg://trading:trading@postgres/trading
       REDIS_URL: redis://redis:6379
+      DASHBOARD_HOST: "0.0.0.0"   # bind to all interfaces so the port is reachable from the host
+    ports:
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy

@@ -114,10 +114,20 @@ docker compose up --build
 
 ## Monitoring Dashboard
 
-When `DASHBOARD_ENABLED=true`, a live portfolio dashboard is served at:
+When `DASHBOARD_ENABLED=true`, a live portfolio dashboard is available.
 
-```
-http://127.0.0.1:8080
+| How you're running | URL |
+|--------------------|-----|
+| `uv run python main.py` directly | `http://127.0.0.1:8080` |
+| `docker compose up` | `http://localhost:8080` |
+
+When running via Docker Compose, the dashboard binds to `0.0.0.0` inside the container (set via `DASHBOARD_HOST` in `docker-compose.yml`) and port 8080 is mapped to your laptop, so `http://localhost:8080` works directly in your browser.
+
+If you want a different host port (e.g. to avoid conflicts), change the mapping in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "9090:8080"   # access at http://localhost:9090
 ```
 
 ---
