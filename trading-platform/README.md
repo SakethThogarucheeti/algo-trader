@@ -55,8 +55,11 @@ DASHBOARD_ENABLED=true
 DASHBOARD_HOST=127.0.0.1
 DASHBOARD_PORT=8080
 
-# Algo configuration — JSON list; omit to use all instruments in the DB
-# ALGOS='[{"name":"momentum","instruments":["INFY","TCS"],"equity":100000}]'
+# Capital allocated to the default algo (used when ALGOS is not set)
+DEFAULT_EQUITY=10000
+
+# Algo configuration — JSON list; omit to use all instruments in the DB with DEFAULT_EQUITY
+# ALGOS='[{"name":"momentum","instruments":["INFY","TCS"],"equity":10000}]'
 ```
 
 > **Zerodha Redirect URL:** In your Kite developer app settings, set the redirect URL to `http://127.0.0.1:8080/` so the login script can capture the request token automatically.

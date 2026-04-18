@@ -166,6 +166,7 @@ class ComponentProvider(Provider):
                     name="default",
                     instruments=all_symbols,
                     broker_name="paper" if settings.paper_trading else "zerodha",
+                    equity=settings.default_equity,
                 )
             ]
             logger.info(

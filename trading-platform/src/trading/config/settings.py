@@ -74,10 +74,12 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------ #
     # Algo configuration — one entry per trading algo                    #
-    # ALGOS='[{"name":"momentum","instruments":["INFY"],"equity":100000}]'
-    # When empty, a single default algo is assembled from all DB instruments.
+    # ALGOS='[{"name":"momentum","instruments":["INFY"],"equity":10000}]'
+    # When empty, a single default algo is assembled from all DB instruments
+    # using default_equity as its capital.
     # ------------------------------------------------------------------ #
     algos: list[AlgoSettings] = Field(default_factory=list)
+    default_equity: float = Field(default=10_000.0, gt=0)
 
     # ------------------------------------------------------------------ #
     # Monitoring — optional; alerter is disabled when absent              #
