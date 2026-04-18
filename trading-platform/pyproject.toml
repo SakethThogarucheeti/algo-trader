@@ -48,6 +48,7 @@ testpaths = ["tst"]
 
 [project.scripts]
 build = "trading.ci:main"
+start = "trading.start:main"
 
 [tool.uv]
 package = true

@@ -10,7 +10,7 @@ An event-driven intraday trading platform for Indian equity markets, built on Ze
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Python | 3.10+ | 3.10.x recommended (see `.python-version`) |
+| Python | 3.13+ | managed by uv via `.python-version` |
 | [uv](https://docs.astral.sh/uv/) | latest | dependency manager and runner |
 | Docker + Docker Compose | v2+ | for Postgres and Redis |
 
@@ -61,23 +61,7 @@ DASHBOARD_PORT=8080
 
 > **Zerodha Redirect URL:** In your Kite developer app settings, set the redirect URL to `http://127.0.0.1:8080/` so the login script can capture the request token automatically.
 
-### 3. Start infrastructure
-
-```bash
-docker compose up postgres redis -d
-```
-
-### 4. Run database migrations
-
-Migrations run automatically on bot startup, but you can apply them manually:
-
-```bash
-uv run alembic upgrade head
-```
-
----
-
-## Daily Login (access token refresh)
+### 3. Daily login (access token refresh)
 
 Zerodha access tokens expire daily. Run this each morning before market open:
 
@@ -89,14 +73,31 @@ This opens a browser to the Kite login page, captures the redirect, and writes `
 
 ---
 
-## Running the Bot
+## Starting the Bot
+
+### One command (recommended)
 
 ```bash
+uv run start
+```
+
+This single command:
+1. Starts Postgres and Redis via Docker Compose
+2. Waits until both are healthy
+3. Launches the trading bot
+
+### Manual steps (if you prefer)
+
+```bash
+# 1. Start infrastructure
+docker compose up postgres redis -d
+
+# 2. Wait until healthy, then start the bot
 uv run python main.py
 ```
 
 The bot will:
-1. Apply any pending DB migrations
+1. Apply any pending DB migrations automatically
 2. Start the APScheduler
 3. Fire `Runtime.start` at **09:15 IST** each weekday
 4. Fire `Runtime.stop` at **15:30 IST** each weekday
@@ -104,7 +105,7 @@ The bot will:
 
 Stop with `Ctrl+C` — shuts down cleanly (scheduler stopped, DB/Redis connections closed).
 
-### Running with Docker Compose (all services including the bot)
+### Running everything in Docker (bot + infra)
 
 ```bash
 docker compose up --build
