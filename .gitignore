@@ -24,3 +24,6 @@ wheels/
 
 # Lock files
 uv.lock
+
+# Historical market data (fetched via uv run fetch-data)
+**/data/
