@@ -49,6 +49,7 @@ testpaths = ["tst"]
 [project.scripts]
 build = "trading.ci:main"
 start = "trading.start:main"
+fetch-data = "trading.scripts.fetch_data:main"
 
 [tool.uv]
 package = true
