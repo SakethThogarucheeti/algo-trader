@@ -23,4 +23,4 @@ testpaths = ["system-testing"]
 package = true
 
 [tool.uv.sources]
-trading-platform = { path = "../trading-platform", editable = true }
+trading-platform = { path = "..", editable = true }

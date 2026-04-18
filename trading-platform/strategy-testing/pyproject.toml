@@ -23,8 +23,11 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["strategy-testing"]
 
+[tool.setuptools.packages.find]
+include = ["testing*"]
+
 [tool.uv]
 package = true
 
 [tool.uv.sources]
-trading-platform = { path = "../trading-platform", editable = true }
+trading-platform = { path = "..", editable = true }

@@ -8,15 +8,19 @@ checks, and position tracking run against the actual engine — no SQLite shims.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import polars as pl
 import pytest
-from testing.backtesting.data_loader import DataLoader
+from testing.backtesting.data_loader import DataLoader, FileDataLoader
 from testing.backtesting.engine import BacktestSession
 from testing.backtesting.report import BacktestConfig
 from testing.utils.generators import crash_scenario, random_walk_ohlcv, trending_market
 
 from trading.config.settings import AlgoSettings
+
+# Directory written by `uv run fetch-data` — skip real-data tests when absent
+_DATA_DIR = Path(__file__).parents[2] / "data"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -185,3 +189,80 @@ async def test_backtest_session_report_persisted(pg_engine, redis_client, bus, t
     session_dir = tmp_path / report.session_id
     assert (session_dir / "report.json").exists(), "report.json must be written"
     assert (session_dir / "report.html").exists(), "report.html must be written"
+
+
+# ---------------------------------------------------------------------------
+# Real market data — EMA crossover on fetched Zerodha data
+# Skipped automatically when data/ directory is absent (CI without credentials)
+# ---------------------------------------------------------------------------
+
+_REAL_DATA_SYMBOLS = ["INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK"]
+_REAL_START = datetime(2025, 6, 1, tzinfo=UTC)
+_REAL_END = datetime(2026, 4, 17, tzinfo=UTC)
+_REAL_EQUITY = 10_000.0
+
+
+def _real_algo(name: str, symbols: list[str]) -> AlgoSettings:
+    return AlgoSettings(
+        name=name,
+        instruments=symbols,
+        strategy_id="ema_crossover",
+        candle_intervals=["15min"],
+        equity=_REAL_EQUITY,
+    )
+
+
+@pytest.mark.skipif(not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first")
+async def test_ema_crossover_real_data_completes(pg_engine, redis_client, bus, tmp_path):
+    """EMA crossover on real Zerodha data must complete and produce a valid report."""
+    config = BacktestConfig(
+        algo=_real_algo("ema_real", _REAL_DATA_SYMBOLS),
+        start=_REAL_START,
+        end=_REAL_END,
+        loader=FileDataLoader(_DATA_DIR),
+        initial_equity=_REAL_EQUITY,
+        slippage_pct=0.05,
+    )
+    report = await _run(config, pg_engine, redis_client, bus, tmp_path)
+
+    assert report is not None
+    assert report.total_trades >= 0
+    assert report.final_equity > 0
+    assert 0.0 <= report.max_drawdown <= 1.0
+    assert 0.0 <= report.win_rate <= 1.0
+
+    # Print a summary so it's visible in pytest output
+    print(f"\n{'='*55}")
+    print(f"  EMA Crossover — Real Data Backtest")
+    print(f"  Symbols  : {', '.join(_REAL_DATA_SYMBOLS)}")
+    print(f"  Period   : {_REAL_START.date()} to {_REAL_END.date()}")
+    print(f"  Equity   : {_REAL_EQUITY:,.0f} -> {report.final_equity:,.2f}")
+    print(f"  Trades   : {report.total_trades}")
+    print(f"  Win rate : {report.win_rate:.1%}")
+    print(f"  Max DD   : {report.max_drawdown:.1%}")
+    print(f"  Sharpe   : {report.sharpe_ratio:.2f}")
+    print(f"  CAGR     : {report.cagr:.1%}")
+    print(f"  Report   : {tmp_path / report.session_id / 'report.html'}")
+    print(f"{'='*55}")
+
+
+@pytest.mark.skipif(not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first")
+@pytest.mark.parametrize("symbol", _REAL_DATA_SYMBOLS)
+async def test_ema_crossover_per_symbol(pg_engine, redis_client, bus, tmp_path, symbol):
+    """EMA crossover on each symbol individually — surfaces per-symbol edge cases."""
+    config = BacktestConfig(
+        algo=_real_algo(f"ema_{symbol.lower()}", [symbol]),
+        start=_REAL_START,
+        end=_REAL_END,
+        loader=FileDataLoader(_DATA_DIR),
+        initial_equity=_REAL_EQUITY,
+        slippage_pct=0.05,
+    )
+    report = await _run(config, pg_engine, redis_client, bus, tmp_path)
+
+    assert report.final_equity > 0
+    print(
+        f"\n  {symbol:12} trades={report.total_trades:3}  "
+        f"win={report.win_rate:.0%}  dd={report.max_drawdown:.1%}  "
+        f"final={report.final_equity:,.0f}"
+    )
