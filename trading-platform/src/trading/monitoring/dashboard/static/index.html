@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Algo Trading Dashboard</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --pos:      #22c55e;
+      --neg:      #ef4444;
+      --neutral:  #f59e0b;
+      --accent:   #6366f1;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: 0.05em; color: var(--accent); }
+
+    #session-selector {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+      font-family: inherit;
+      font-size: 12px;
+    }
+
+    #status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--pos);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .card.full-width { grid-column: 1 / -1; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .card-body { padding: 0.75rem 1rem; }
+
+    /* tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th {
+      text-align: left;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .data-table td {
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid #1e2130;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .data-table tr:last-child td { border-bottom: none; }
+
+    .pos     { color: var(--pos); }
+    .neg     { color: var(--neg); }
+    .neutral { color: var(--neutral); }
+
+    .empty-state {
+      color: var(--muted);
+      text-align: center;
+      padding: 1rem;
+      font-size: 12px;
+    }
+
+    /* SSE decision feed */
+    #decision-feed {
+      height: 220px;
+      overflow-y: auto;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column-reverse;
+    }
+
+    .decision-entry {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #1e2130;
+      align-items: baseline;
+    }
+
+    .decision-entry .ts   { color: var(--muted); min-width: 7ch; flex-shrink: 0; }
+    .decision-entry .sym  { font-weight: 600; min-width: 6ch; }
+    .decision-entry .step { min-width: 18ch; }
+    .decision-entry .ctx  { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+
+    /* chart */
+    #pnl-chart-container { position: relative; height: 200px; }
+
+    /* htmx indicator */
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot" title="Live"></div>
+  <h1>Algo Trading Dashboard</h1>
+  <div id="session-selector">
+    <label for="session-select" style="color:var(--muted);font-size:11px;">Session:</label>
+    <select id="session-select" onchange="onSessionChange(this.value)">
+      <option value="">live</option>
+    </select>
+  </div>
+</header>
+
+<main>
+
+  <!-- Positions -->
+  <div class="card">
+    <div class="card-header">
+      <span>Positions</span>
+      <span class="htmx-indicator" id="pos-spinner">loading…</span>
+    </div>
+    <div class="card-body"
+         id="positions-body"
+         hx-get="/api/positions"
+         hx-trigger="load, every 5s"
+         hx-indicator="#pos-spinner">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+
+  <!-- Health -->
+  <div class="card">
+    <div class="card-header">
+      <span>Component Health</span>
+      <span class="htmx-indicator" id="health-spinner">loading…</span>
+    </div>
+    <div class="card-body"
+         id="health-body"
+         hx-get="/api/health"
+         hx-trigger="load, every 5s"
+         hx-indicator="#health-spinner">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+
+  <!-- P&L chart -->
+  <div class="card full-width">
+    <div class="card-header">
+      <span>Cumulative P&amp;L</span>
+    </div>
+    <div class="card-body">
+      <div id="pnl-chart-container">
+        <canvas id="pnl-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signals -->
+  <div class="card">
+    <div class="card-header">
+      <span>Recent Signals</span>
+      <span class="htmx-indicator" id="sig-spinner">loading…</span>
+    </div>
+    <div class="card-body"
+         id="signals-body"
+         hx-get="/api/signals"
+         hx-trigger="load, every 10s"
+         hx-indicator="#sig-spinner">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+
+  <!-- Live decision feed -->
+  <div class="card">
+    <div class="card-header">
+      <span>Decision Feed</span>
+      <span id="feed-status" style="font-size:10px;color:var(--muted);">connecting…</span>
+    </div>
+    <div class="card-body" style="padding:0.5rem 0.75rem;">
+      <div id="decision-feed"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Session management
+// ---------------------------------------------------------------------------
+
+let currentSession = "";
+
+async function loadSessions() {
+  try {
+    const res = await fetch("/api/sessions");
+    const sessions = await res.json();
+    const sel = document.getElementById("session-select");
+    // keep the live option, add backtest sessions
+    sessions.forEach(s => {
+      if (s !== null && s !== "") {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        sel.appendChild(opt);
+      }
+    });
+  } catch (e) {
+    console.warn("Could not load sessions:", e);
+  }
+}
+
+function onSessionChange(value) {
+  currentSession = value;
+
+  // re-trigger htmx panels with new session_id
+  const signalsBody = document.getElementById("signals-body");
+  const newUrl = "/api/signals" + (value ? "?session_id=" + encodeURIComponent(value) : "");
+  signalsBody.setAttribute("hx-get", newUrl);
+  htmx.trigger(signalsBody, "load");
+
+  // restart SSE for new session
+  startSSE(value);
+}
+
+// ---------------------------------------------------------------------------
+// P&L chart (Chart.js)
+// ---------------------------------------------------------------------------
+
+let pnlChart = null;
+
+function initChart() {
+  const ctx = document.getElementById("pnl-chart").getContext("2d");
+  pnlChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Cumulative P&L",
+        data: [],
+        borderColor: "#6366f1",
+        backgroundColor: "rgba(99,102,241,0.08)",
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.3,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => "₹ " + ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#64748b", maxTicksLimit: 8, font: { size: 10 } },
+          grid: { color: "#1e2130" }
+        },
+        y: {
+          ticks: {
+            color: "#64748b",
+            font: { size: 10 },
+            callback: v => "₹" + v.toLocaleString("en-IN")
+          },
+          grid: { color: "#1e2130" }
+        }
+      }
+    }
+  });
+}
+
+async function refreshPnl() {
+  if (!pnlChart) return;
+  try {
+    const qs = currentSession ? "?session_id=" + encodeURIComponent(currentSession) : "";
+    const res = await fetch("/api/pnl" + qs);
+    const points = await res.json();
+    pnlChart.data.labels = points.map(p => {
+      const d = new Date(p.ts);
+      return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    });
+    pnlChart.data.datasets[0].data = points.map(p => p.cumulative_pnl);
+    // colour the line red if P&L is negative overall
+    const last = points.length ? points[points.length - 1].cumulative_pnl : 0;
+    pnlChart.data.datasets[0].borderColor = last >= 0 ? "#6366f1" : "#ef4444";
+    pnlChart.update("none");
+  } catch (e) {
+    console.warn("P&L fetch failed:", e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSE — live decision feed
+// ---------------------------------------------------------------------------
+
+let sse = null;
+
+function startSSE(sessionId) {
+  if (sse) { sse.close(); sse = null; }
+
+  const qs = sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "";
+  sse = new EventSource("/api/decisions/stream" + qs);
+
+  const feed = document.getElementById("decision-feed");
+  const status = document.getElementById("feed-status");
+
+  sse.onopen = () => { status.textContent = "live"; status.style.color = "var(--pos)"; };
+  sse.onerror = () => { status.textContent = "reconnecting…"; status.style.color = "var(--neg)"; };
+
+  sse.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    const ts = d.ts ? new Date(d.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+    const stepClass = { SIGNAL_ACCEPTED: "pos", SIGNAL_REJECTED: "neg", SIGNAL_GENERATED: "neutral" }[d.step] || "";
+    const ctx = d.context || {};
+    const ctxStr = ctx.reason || (ctx.qty != null ? "qty=" + ctx.qty : Object.entries(ctx).slice(0, 2).map(([k,v]) => k+"="+v).join(" "));
+
+    const entry = document.createElement("div");
+    entry.className = "decision-entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="sym">${d.symbol || "—"}</span>` +
+      `<span class="step ${stepClass}">${d.step}</span>` +
+      `<span class="ctx">${ctxStr}</span>`;
+
+    // prepend so newest is at top (feed is column-reverse)
+    feed.insertBefore(entry, feed.firstChild);
+
+    // cap at 200 entries
+    while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadSessions();
+  initChart();
+  refreshPnl();
+  setInterval(refreshPnl, 30_000);
+  startSSE("");
+});
+</script>
+</body>
+</html>
