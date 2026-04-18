@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import logging
+
+from anyio import create_task_group, sleep
+
+from trading.engine.component import Component
+from trading.storage.repository import Repository
+
+logger = logging.getLogger(__name__)
+
+
+class HeartbeatMonitor(Component):
+    """
+    Writes its own heartbeat to Postgres and checks all other modules.
+
+    Two concurrent inner tasks run inside ``_run()``:
+    - ``_beat_loop``: upserts ``last_seen`` for this module every N seconds.
+    - ``_monitor_loop``: queries for stale modules every N seconds and
+      sends a Telegram alert (via the optional alerter callback) for each.
+
+    Alerter
+    -------
+    An optional ``alerter`` callable receives ``(module_name: str)`` when a
+    module is detected as stale. The TelegramAlerter implements this interface.
+    """
+
+    def __init__(
+        self,
+        repo: Repository,
+        session_factory,  # async_sessionmaker[AsyncSession]
+        component_names: list[str],
+        beat_interval_secs: int = 5,
+        timeout_secs: int = 15,
+        alerter=None,  # Callable[[str], Awaitable[None]] | None
+    ) -> None:
+        super().__init__(name="heartbeat_monitor")
+        self._repo = repo
+        self._session_factory = session_factory
+        self._component_names = component_names
+        self._beat_interval = beat_interval_secs
+        self._timeout = timeout_secs
+        self._alerter = alerter
+
+    # ------------------------------------------------------------------
+    # Component lifecycle
+    # ------------------------------------------------------------------
+
+    async def _setup(self) -> None:
+        """Register monitored component names, clearing any stale rows from prior runs."""
+        from sqlalchemy import delete
+
+        from trading.core.models import Heartbeat
+
+        async with self._session_factory() as session:
+            async with session.begin():
+                # Delete heartbeat rows not in the current monitored set so old
+                # component names from a previous process don't trigger false alerts.
+                await session.execute(
+                    delete(Heartbeat).where(Heartbeat.module.not_in(self._component_names))
+                )
+                for name in self._component_names:
+                    await self._repo.update_heartbeat(session, name)
+        logger.info("HeartbeatMonitor: registered %d components", len(self._component_names))
+
+    async def _run(self) -> None:
+        async with create_task_group() as tg:
+            tg.start_soon(self._beat_loop)
+            tg.start_soon(self._monitor_loop)
+
+    # ------------------------------------------------------------------
+    # Inner tasks
+    # ------------------------------------------------------------------
+
+    async def _beat_loop(self) -> None:
+        """Upsert own heartbeat every beat_interval_secs."""
+        while True:
+            try:
+                async with self._session_factory() as session:
+                    async with session.begin():
+                        await self._repo.update_heartbeat(session, self.name)
+            except Exception:
+                logger.exception("HeartbeatMonitor: beat failed")
+            await sleep(self._beat_interval)
+
+    async def _monitor_loop(self) -> None:
+        """Check for stale modules every timeout_secs."""
+        while True:
+            await sleep(self._timeout)
+            try:
+                async with self._session_factory() as session:
+                    async with session.begin():
+                        stale = await self._repo.get_stale_modules(
+                            session, self._timeout, modules=self._component_names
+                        )
+                for module in stale:
+                    logger.warning("HeartbeatMonitor: %s is stale", module)
+                    if self._alerter is not None:
+                        await self._alerter(module)
+            except Exception:
+                logger.exception("HeartbeatMonitor: monitor check failed")
