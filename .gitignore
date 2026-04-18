@@ -20,4 +20,7 @@ wheels/
 .claude/
 
 # Test session results
-strategy-testing/session_results/
+**/session_results/
+
+# Lock files
+uv.lock
