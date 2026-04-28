@@ -2,9 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-from trading.broker.zerodha_broker.kite_client.kite_client import (
-    KiteClient,
-)
+from trading.broker.zerodha.kite_client import KiteClient
 
 load_dotenv()
 

@@ -116,15 +116,48 @@ def _write_token_to_env(token: str, env_path: Path) -> None:
     print(f"  Access token written to {env_path}")
 
 
+def _exchange_and_save(client: object, request_token: str) -> None:
+    from trading.broker.zerodha.kite_client import KiteClient
+    assert isinstance(client, KiteClient)
+    print("\nRequest token received. Exchanging for access token …")
+    session = client.generate_session(request_token, API_SECRET)
+    access_token: str = session["access_token"]
+    _write_token_to_env(access_token, _ENV_PATH)
+    print("\nLogin complete.")
+    print(f"  User:         {session.get('user_name', 'unknown')}")
+    print(f"  Login time:   {session.get('login_time', 'unknown')}")
+    print(f"  Token prefix: {access_token[:8]}…")
+
+
 def main() -> None:
-    from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
+    from trading.broker.zerodha.kite_client import KiteClient
 
     client = KiteClient(API_KEY)
     login_url = client.login_url()
 
-    print("Starting local callback server on http://127.0.0.1:8080/ …")
-    server = HTTPServer((_CALLBACK_HOST, _CALLBACK_PORT), _CallbackHandler)
+    # Try to bind the callback server — fail fast if the port is occupied.
+    try:
+        server = HTTPServer((_CALLBACK_HOST, _CALLBACK_PORT), _CallbackHandler)
+    except OSError:
+        print(f"\nERROR: port {_CALLBACK_PORT} is already in use.")
+        print("Stop the process holding it (e.g. the trading bot) and rerun this script.")
+        print("\nAlternatively, open the login URL manually, complete login, then paste")
+        print("the full redirect URL (or just the request_token) below when prompted.")
+        print(f"\nLogin URL:\n  {login_url}\n")
+        webbrowser.open(login_url)
+        raw = input("Paste the redirect URL or request_token here: ").strip()
+        # Accept either the full URL or just the bare token
+        if raw.startswith("http"):
+            params = parse_qs(urlparse(raw).query)
+            request_token = params.get("request_token", [""])[0]
+        else:
+            request_token = raw
+        if not request_token:
+            sys.exit("ERROR: no request_token found in input")
+        _exchange_and_save(client, request_token)
+        return
 
+    print("Starting local callback server on http://127.0.0.1:8080/ …")
     print(f"\nOpening browser to Zerodha login:\n  {login_url}\n")
     webbrowser.open(login_url)
 
@@ -134,16 +167,7 @@ def main() -> None:
     if _server_error or not _request_token:
         sys.exit(f"ERROR: Login failed — {_server_error or 'no request_token received'}")
 
-    print("\nRequest token received. Exchanging for access token …")
-    session = client.generate_session(_request_token, API_SECRET)
-    access_token: str = session["access_token"]
-
-    _write_token_to_env(access_token, _ENV_PATH)
-
-    print("\nLogin complete.")
-    print(f"  User:         {session.get('user_name', 'unknown')}")
-    print(f"  Login time:   {session.get('login_time', 'unknown')}")
-    print(f"  Token prefix: {access_token[:8]}…")
+    _exchange_and_save(client, _request_token)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

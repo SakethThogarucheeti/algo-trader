@@ -62,6 +62,28 @@ _MARKET_OPEN = time(9, 15)
 _MARKET_CLOSE = time(15, 30)
 
 
+def _check_port_free(port: int) -> None:
+    """Exit with a clear message if *port* is already in use."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", port)) != 0:
+            return  # port is free
+
+    # Find the owning PID on Windows for a helpful error message
+    pid_hint = ""
+    if sys.platform == "win32":
+        result = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            if f":{port} " in line and "LISTENING" in line:
+                pid_hint = f" (PID {line.split()[-1]})"
+                break
+
+    sys.exit(
+        f"ERROR: port {port} is already in use{pid_hint}.\n"
+        f"Stop the process holding it and rerun:  uv run start"
+    )
+
+
 def _run_migrations() -> None:
     """Apply pending Alembic migrations synchronously before starting async code."""
     logger.info("Running Alembic migrations…")
@@ -88,6 +110,11 @@ def _is_market_hours() -> bool:
 
 
 async def _main() -> None:
+    from trading.config.settings import get_settings
+    settings = get_settings()
+    if settings.dashboard_enabled:
+        _check_port_free(settings.dashboard_port)
+
     _run_migrations()
 
     async with build_container() as container:

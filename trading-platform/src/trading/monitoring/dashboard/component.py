@@ -4,6 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.core.clock import Clock, SYSTEM_CLOCK
 from trading.engine.component import Component
 from trading.monitoring.dashboard.app import build_app
 
@@ -18,25 +19,27 @@ class DashboardServer(Component):
     before the dashboard begins serving requests. Stops cleanly when the
     runtime shuts down by signalling uvicorn's ``should_exit`` flag.
 
-    Access the dashboard at http://<host>:<port>/ (default 127.0.0.1:8080).
+    Access the dashboard at http://<host>:<port>/ (default 127.0.0.1:8081).
     """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
         host: str = "127.0.0.1",
-        port: int = 8080,
+        port: int = 8081,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         super().__init__(name="dashboard")
         self._session_factory = session_factory
         self._host = host
         self._port = port
+        self._clock = clock
         self._server: object | None = None  # uvicorn.Server, set in _setup
 
     async def _setup(self) -> None:
         import uvicorn
 
-        app = build_app(self._session_factory)
+        app = build_app(self._session_factory, self._clock)
         config = uvicorn.Config(
             app=app,
             host=self._host,

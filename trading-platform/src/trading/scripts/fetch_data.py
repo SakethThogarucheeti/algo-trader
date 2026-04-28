@@ -189,8 +189,8 @@ def _symbols_from_db() -> list[str]:
 
 
 def _build_broker() -> object:
-    from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
-    from trading.broker.zerodha_broker.zerodha import ZerodhaBroker
+    from trading.broker.zerodha.kite_client import KiteClient
+    from trading.broker.zerodha.broker import ZerodhaBroker
 
     api_key = os.environ.get("ZERODHA_API_KEY", "")
     access_token = os.environ.get("ZERODHA_ACCESS_TOKEN", "")
