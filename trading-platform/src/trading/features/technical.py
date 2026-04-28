@@ -15,6 +15,11 @@ _SESSION_OPEN_IST = time(9, 15)
 _IST_OFFSET_MINS = 5 * 60 + 30  # +05:30
 
 
+_DEFAULT_EMA_SPANS = (9, 21)
+_DEFAULT_ATR_PERIOD = 14
+_DEFAULT_RSI_PERIOD = 14
+
+
 class TechnicalFeatureEngine(FeatureEngine):
     """
     Maintains a rolling Polars DataFrame per (symbol, interval) and
@@ -28,18 +33,33 @@ class TechnicalFeatureEngine(FeatureEngine):
 
     Indicators
     ----------
-    - ``ema_9``   — 9-period EMA of close (Polars ewm_mean, adjust=False)
-    - ``ema_21``  — 21-period EMA of close
+    - ``ema_{n}`` — EMA of close for each span in *ema_spans*
     - ``rsi_14``  — 14-period RSI, range [0, 100]
-    - ``atr_14``  — 14-period Average True Range, always ≥ 0
+    - ``atr_{n}`` — Average True Range for *atr_period*
     - ``vwap``    — Cumulative VWAP, resets at session open (09:15 IST)
 
     All indicators are null/NaN while insufficient data exists.
     No TA-Lib dependency — computed with Polars expressions only.
+
+    Parameters
+    ----------
+    window_size:
+        Maximum number of bars to retain in memory per (symbol, interval).
+    ema_spans:
+        EMA periods to compute. Default: (9, 21).
+    atr_period:
+        ATR smoothing period. Default: 14.
     """
 
-    def __init__(self, window_size: int = 200) -> None:
+    def __init__(
+        self,
+        window_size: int = 200,
+        ema_spans: tuple[int, ...] | list[int] = _DEFAULT_EMA_SPANS,
+        atr_period: int = _DEFAULT_ATR_PERIOD,
+    ) -> None:
         self._window_size = window_size
+        self._ema_spans: tuple[int, ...] = tuple(ema_spans)
+        self._atr_period = atr_period
         # (symbol, interval) → rolling DataFrame
         self._frames: dict[tuple[str, str], pl.DataFrame] = {}
 
@@ -73,11 +93,8 @@ class TechnicalFeatureEngine(FeatureEngine):
         if existing is None:
             df = new_row
         else:
-            indicator_cols = [
-                c
-                for c in ["ema_9", "ema_21", "rsi_14", "atr_14", "vwap", "_session_id"]
-                if c in existing.columns
-            ]
+            _base_cols = ("timestamp", "open", "high", "low", "close", "volume")
+            indicator_cols = [c for c in existing.columns if c not in _base_cols]
             base = existing.drop(indicator_cols) if indicator_cols else existing
             df = pl.concat([base, new_row], how="vertical")
 
@@ -85,8 +102,14 @@ class TechnicalFeatureEngine(FeatureEngine):
         if df.height > self._window_size:
             df = df.tail(self._window_size)
 
-        df = _add_indicators(df)
+        df = _add_indicators(df, ema_spans=self._ema_spans, atr_period=self._atr_period)
         self._frames[key] = df
+        logger.debug(
+            "TechnicalFeatureEngine: %s/%s updated rows=%d",
+            event.symbol,
+            event.interval,
+            df.height,
+        )
         return df
 
     def get(self, symbol: str, interval: str) -> pl.DataFrame | None:
@@ -99,7 +122,11 @@ class TechnicalFeatureEngine(FeatureEngine):
 # ---------------------------------------------------------------------------
 
 
-def _add_indicators(df: pl.DataFrame) -> pl.DataFrame:
+def _add_indicators(
+    df: pl.DataFrame,
+    ema_spans: tuple[int, ...] = _DEFAULT_EMA_SPANS,
+    atr_period: int = _DEFAULT_ATR_PERIOD,
+) -> pl.DataFrame:
     """
     Two-pass indicator computation:
     1. Add ``_session_id`` (materialised column needed by VWAP ``over``).
@@ -123,15 +150,13 @@ def _add_indicators(df: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(is_new_session.cast(pl.Int64).cum_sum().alias("_session_id"))
 
     # --- Pass 2: compute all indicators ---
-    df = df.with_columns(
-        [
-            _ema(9).alias("ema_9"),
-            _ema(21).alias("ema_21"),
-            _rsi(14).alias("rsi_14"),
-            _atr(14).alias("atr_14"),
-            _vwap().alias("vwap"),
-        ]
-    ).drop("_session_id")
+    indicator_exprs = [
+        *[_ema(span).alias(f"ema_{span}") for span in ema_spans],
+        _rsi(_DEFAULT_RSI_PERIOD).alias(f"rsi_{_DEFAULT_RSI_PERIOD}"),
+        _atr(atr_period).alias(f"atr_{atr_period}"),
+        _vwap().alias("vwap"),
+    ]
+    df = df.with_columns(indicator_exprs).drop("_session_id")
 
     return df
 

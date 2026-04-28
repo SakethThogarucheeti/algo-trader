@@ -22,6 +22,7 @@ Enable by adding  PAPER_TRADING=true  to .env.
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from datetime import datetime
 from uuid import uuid4
 
@@ -33,8 +34,25 @@ from trading.core.schemas import OrderType, Side
 logger = logging.getLogger(__name__)
 
 
-class PriceStore:
-    """Thread-safe-enough mutable dict: symbol → last traded price."""
+class AbstractPriceStore(ABC):
+    """
+    Read/write interface for the last-known price of each symbol.
+
+    Used by the execution engine to price fills and by the backtester
+    to keep the price store current on every bar.
+    """
+
+    @abstractmethod
+    def update(self, symbol: str, price: float) -> None:
+        """Record *price* as the most recent price for *symbol*."""
+
+    @abstractmethod
+    def get(self, symbol: str) -> float | None:
+        """Return the last known price for *symbol*, or None if not yet seen."""
+
+
+class PriceStore(AbstractPriceStore):
+    """In-memory implementation: symbol → last traded price."""
 
     def __init__(self) -> None:
         self._prices: dict[str, float] = {}

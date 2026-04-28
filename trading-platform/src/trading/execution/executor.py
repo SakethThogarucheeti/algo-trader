@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -14,12 +15,14 @@ from trading.core.schemas import (
     FillEvent,
     OrderEvent,
     OrderStatus,
+    Side,
     ValidatedOrderEvent,
 )
 from trading.engine.component import Component
 from trading.execution.base import ExecutionEngine
 from trading.execution.idempotency import is_duplicate
-from trading.storage.repository import NotFoundError, Repository
+from trading.storage.base import AbstractRepository
+from trading.storage.repository import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +52,21 @@ class DirectExecutionEngine(ExecutionEngine):
         self,
         bus: MessageBus,
         broker: Broker,
-        repo: Repository,
+        repo: AbstractRepository,
         session_factory: async_sessionmaker[AsyncSession],
         paper_price_store: object | None = None,  # PriceStore | None
+        orders_channel: str = "orders",
+        fills_channel: str = "fills",
+        on_order_placed: Callable[[str, str, Side], None] | None = None,
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._repo = repo
         self._session_factory = session_factory
         self._price_store = paper_price_store
+        self._orders_channel = orders_channel
+        self._fills_channel = fills_channel
+        self._on_order_placed = on_order_placed
 
     async def execute(self, event: ValidatedOrderEvent) -> None:
         async with self._session_factory() as session:
@@ -106,21 +115,27 @@ class DirectExecutionEngine(ExecutionEngine):
                     order_row.kite_order_id = kite_order_id
                     order_row.status = final_status.value
 
-        # 5. Publish OrderEvent
+        # 5. Notify fill-tracking callback (synchronous, before bus publish so
+        #    the kite_order_id→(symbol, side) mapping is registered before any
+        #    FillEvent can arrive on the fills channel).
+        if self._on_order_placed is not None:
+            self._on_order_placed(kite_order_id, event.symbol, event.side)
+
+        # 6. Publish OrderEvent
         order_event = OrderEvent(
             signal_id=event.signal_id,
             kite_order_id=kite_order_id,
             status=final_status,
             timestamp=datetime.now(UTC),
         )
-        await self._bus.publish("orders", order_event)
+        await self._bus.publish(self._orders_channel, order_event)
         logger.info(
             "DirectExecutionEngine: order %s status=%s",
             kite_order_id,
             final_status.value,
         )
 
-        # 6. Paper trading: simulate immediate fill at last known price
+        # 7. Paper trading: simulate immediate fill at last known price
         if self._price_store is not None and final_status == OrderStatus.PLACED:
             fill_price: float | None = self._price_store.get(event.symbol)  # type: ignore[attr-defined]
             if fill_price is None:
@@ -192,7 +207,7 @@ class DirectExecutionEngine(ExecutionEngine):
             filled_qty=filled_qty,
             timestamp=datetime.now(UTC),
         )
-        await self._bus.publish("fills", fill_event)
+        await self._bus.publish(self._fills_channel, fill_event)
         logger.info(
             "DirectExecutionEngine: fill %s avg=%.2f qty=%d",
             kite_order_id,

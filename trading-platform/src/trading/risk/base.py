@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from trading.core.messaging import MessageBus
 from trading.core.schemas import SignalEvent, ValidatedOrderEvent
 from trading.engine.component import Component
-from trading.storage.repository import Repository
+from trading.storage.base import AbstractRepository
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class RiskController(Component):
     def __init__(
         self,
         bus: MessageBus,
-        repo: Repository,
+        repo: AbstractRepository,
         session_factory: async_sessionmaker[AsyncSession],
         signals_channel: str = "signals",
         validated_orders_channel: str = "validated_orders",
