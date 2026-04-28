@@ -6,7 +6,7 @@ from typing import Any, Protocol, cast
 
 from kiteconnect import KiteConnect
 
-from trading.broker.zerodha_broker.model.zerodha_models import (
+from trading.broker.zerodha.models import (
     ZerodhaCandle,
     ZerodhaInstrument,
     ZerodhaProfile,

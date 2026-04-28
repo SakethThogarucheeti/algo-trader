@@ -7,7 +7,7 @@ from datetime import datetime
 import polars as pl
 
 from trading.broker.base.broker import Broker
-from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
+from trading.broker.zerodha.kite_client import KiteClient
 from trading.core.schemas import OrderType, Side
 
 _ORDER_TIMEOUT_SECS = 10.0  # max time to wait for Zerodha REST API to respond
@@ -35,9 +35,15 @@ _ORDER_TYPE_MAP: dict[OrderType, str] = {
 
 
 class ZerodhaBroker(Broker):
-    def __init__(self, client: KiteClient, exchange: str = "NSE") -> None:
+    def __init__(
+        self,
+        client: KiteClient,
+        exchange: str = "NSE",
+        order_timeout_secs: float = _ORDER_TIMEOUT_SECS,
+    ) -> None:
         self.client = client
         self.exchange = exchange
+        self._order_timeout_secs = order_timeout_secs
         self._instruments: pl.DataFrame | None = None
 
     def get_instruments(self) -> pl.DataFrame:
@@ -115,11 +121,11 @@ class ZerodhaBroker(Broker):
                     order_type=kite_order_type,
                     price=limit_price,
                 ),
-                timeout=_ORDER_TIMEOUT_SECS,
+                timeout=self._order_timeout_secs,
             )
         except TimeoutError as err:
             raise RuntimeError(
-                f"ZerodhaBroker: place_order timed out after {_ORDER_TIMEOUT_SECS}s "
+                f"ZerodhaBroker: place_order timed out after {self._order_timeout_secs}s "
                 f"for {transaction_type} {symbol} x{qty}"
             ) from err
         logger.info(

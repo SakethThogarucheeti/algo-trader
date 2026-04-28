@@ -7,7 +7,7 @@ from collections.abc import Callable
 from kiteconnect import KiteTicker  # type: ignore[import-untyped]
 
 from trading.broker.base.broker_stream import BrokerStream
-from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
+from trading.broker.zerodha.kite_client import KiteClient
 
 logger = logging.getLogger(__name__)
 
