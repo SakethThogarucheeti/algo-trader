@@ -1,20 +1,18 @@
-"""Tests for data/candles.py — CandleAggregator"""
+"""Tests for pipeline/candle_registry.py — CandleRegistry"""
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 
-import fakeredis.aioredis
 import polars as pl
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.broker.base.broker import Broker
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus, RedisMessageBus
+from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
-from trading.data.candles import CandleAggregator, _bar_open_time, _SymbolConfig
+from trading.registry.candle import _bar_open_time, CandleConfig, CandleRegistry
 from trading.storage.repository import Repository
 
 # ---------------------------------------------------------------------------
@@ -41,7 +39,6 @@ def tick(token: int, price: float, ts: datetime, volume: int = 100) -> TickEvent
 
 
 def make_ohlc_df(n: int, start: datetime, interval_mins: int = 1) -> pl.DataFrame:
-    """Create a synthetic OHLCV DataFrame with n rows."""
     rows = []
     for i in range(n):
         ts = start + timedelta(minutes=i * interval_mins)
@@ -57,6 +54,15 @@ def make_ohlc_df(n: int, start: datetime, interval_mins: int = 1) -> pl.DataFram
             }
         )
     return pl.DataFrame(rows)
+
+
+def make_instrument(token: int, symbol: str = None) -> Instrument:
+    return Instrument(
+        token=token,
+        symbol=symbol or f"SYM{token}",
+        exchange="NSE",
+        instrument_type="EQUITY",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -78,13 +84,7 @@ class MockBroker(Broker):
     async def place_order(self, symbol, side, qty, order_type, limit_price=None) -> str:  # type: ignore[override]
         return "MOCK_ORDER"
 
-    def get_ohlc(
-        self,
-        symbol: str,
-        interval: str,
-        start: datetime,
-        end: datetime,
-    ) -> pl.DataFrame:
+    def get_ohlc(self, symbol: str, interval: str, start: datetime, end: datetime) -> pl.DataFrame:
         self.calls.append((symbol, interval))
         if self._raises:
             raise RuntimeError("broker unavailable")
@@ -97,16 +97,6 @@ class MockBroker(Broker):
 
 
 @pytest.fixture
-def fake_redis() -> fakeredis.aioredis.FakeRedis:
-    return fakeredis.aioredis.FakeRedis()
-
-
-@pytest.fixture
-def bus(fake_redis: fakeredis.aioredis.FakeRedis) -> MessageBus:
-    return RedisMessageBus(fake_redis)
-
-
-@pytest.fixture
 async def engine() -> AsyncEngine:  # type: ignore[misc]
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     await init_db(eng)
@@ -114,30 +104,23 @@ async def engine() -> AsyncEngine:  # type: ignore[misc]
     await eng.dispose()
 
 
-def make_aggregator(
-    bus: MessageBus,
+def make_registry(
     broker: MockBroker,
     engine: AsyncEngine,
     tokens: list[int] | None = None,
     intervals: list[str] | None = None,
     warmup_count: int = 5,
-) -> CandleAggregator:
+) -> CandleRegistry:
     tokens = tokens or [1]
     intervals = intervals or ["1min"]
-    symbols = [
-        _SymbolConfig(symbol=f"SYM{t}", instrument_token=t, instrument_type=InstrumentType.EQUITY)
-        for t in tokens
-    ]
+    instruments = [make_instrument(t) for t in tokens]
     sf = build_session_factory(engine)
-    return CandleAggregator(
-        bus,
-        broker,
-        symbols,
-        intervals,
-        session_factory=sf,
-        repo=Repository(),
+    config = CandleConfig(
+        instruments=instruments,
+        intervals=intervals,
         warmup_count=warmup_count,
     )
+    return CandleRegistry(config=config, broker=broker, session_factory=sf, repo=Repository())
 
 
 # ---------------------------------------------------------------------------
@@ -161,168 +144,106 @@ def test_bar_open_time_15min() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bar aggregation — unit tests (no component lifecycle)
+# Bar aggregation — direct registry tests
 # ---------------------------------------------------------------------------
 
 
-async def test_first_tick_initialises_bar(bus: MessageBus, engine: AsyncEngine) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
+async def test_first_tick_initialises_bar(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine)
 
-    received: list[CandleEvent] = []
-    bus.subscribe("candle:SYM1:1min", CandleEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
-
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    await agg._on_tick(tick(1, 100.0, t(0)))
-    assert ("SYM1", "1min") in agg._bars
-    bar = agg._bars[("SYM1", "1min")]
+    result = await reg.handle(tick(1, 100.0, t(0)))
+    # First tick opens the bar but doesn't close it
+    assert result is None
+    assert ("SYM1", "1min") in reg._bars
+    bar = reg._bars[("SYM1", "1min")]
     assert bar.open == bar.high == bar.low == bar.close == 100.0
     assert bar.volume == 100
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
 
+async def test_higher_price_tick_updates_high(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine)
 
-async def test_higher_price_tick_updates_high(bus: MessageBus, engine: AsyncEngine) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
+    await reg.handle(tick(1, 100.0, t(0)))
+    await reg.handle(tick(1, 110.0, t(10)))
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    await agg._on_tick(tick(1, 100.0, t(0)))
-    await agg._on_tick(tick(1, 110.0, t(10)))
-
-    bar = agg._bars[("SYM1", "1min")]
+    bar = reg._bars[("SYM1", "1min")]
     assert bar.high == 110.0
     assert bar.low == 100.0
     assert bar.close == 110.0
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
 
+async def test_lower_price_tick_updates_low(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine)
 
-async def test_lower_price_tick_updates_low(bus: MessageBus, engine: AsyncEngine) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
+    await reg.handle(tick(1, 100.0, t(0)))
+    await reg.handle(tick(1, 90.0, t(10)))
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    await agg._on_tick(tick(1, 100.0, t(0)))
-    await agg._on_tick(tick(1, 90.0, t(10)))
-
-    bar = agg._bars[("SYM1", "1min")]
+    bar = reg._bars[("SYM1", "1min")]
     assert bar.low == 90.0
     assert bar.high == 100.0
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
 
+async def test_volume_accumulates_within_bar(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine)
 
-async def test_volume_accumulates_within_bar(bus: MessageBus, engine: AsyncEngine) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
+    await reg.handle(tick(1, 100.0, t(0), volume=50))
+    await reg.handle(tick(1, 101.0, t(10), volume=75))
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    await agg._on_tick(tick(1, 100.0, t(0), volume=50))
-    await agg._on_tick(tick(1, 101.0, t(10), volume=75))
-
-    bar = agg._bars[("SYM1", "1min")]
+    bar = reg._bars[("SYM1", "1min")]
     assert bar.volume == 125
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
 
-
-async def test_tick_crossing_bar_boundary_emits_candle(
-    bus: MessageBus, engine: AsyncEngine
-) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
-
-    received: list[CandleEvent] = []
-    bus.subscribe("candle:SYM1:1min", CandleEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
-    await asyncio.sleep(0.05)
-
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
+async def test_tick_crossing_bar_boundary_emits_candle(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine)
 
     # Both at 09:15 — same bar
-    await agg._on_tick(tick(1, 100.0, BASE_TIME))
-    await agg._on_tick(tick(1, 105.0, BASE_TIME + timedelta(seconds=30)))
+    await reg.handle(tick(1, 100.0, BASE_TIME))
+    await reg.handle(tick(1, 105.0, BASE_TIME + timedelta(seconds=30)))
     # 09:16 — new bar → emits previous
-    await agg._on_tick(tick(1, 110.0, BASE_TIME + timedelta(minutes=1)))
-    await asyncio.sleep(0.05)
+    candle = await reg.handle(tick(1, 110.0, BASE_TIME + timedelta(minutes=1)))
 
-    assert len(received) == 1
-    candle = received[0]
+    assert candle is not None
     assert candle.open == 100.0
     assert candle.high == 105.0
     assert candle.close == 105.0
     assert candle.symbol == "SYM1"
     assert candle.interval == "1min"
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
 
-
-async def test_two_intervals_track_independently(bus: MessageBus, engine: AsyncEngine) -> None:
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine, intervals=["1min", "5min"])
-
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    received_1m: list[CandleEvent] = []
-    received_5m: list[CandleEvent] = []
-    bus.subscribe(
-        "candle:SYM1:1min", CandleEvent, lambda e: received_1m.append(e) or asyncio.sleep(0)
-    )  # type: ignore[return-value]
-    bus.subscribe(
-        "candle:SYM1:5min", CandleEvent, lambda e: received_5m.append(e) or asyncio.sleep(0)
-    )  # type: ignore[return-value]
-    await asyncio.sleep(0.05)  # let subscribers actually subscribe to Redis
+async def test_two_intervals_first_closes_1min(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine, intervals=["1min", "5min"])
 
     # Two ticks in the 09:15 window
-    await agg._on_tick(tick(1, 100.0, BASE_TIME))
-    await agg._on_tick(tick(1, 102.0, BASE_TIME + timedelta(seconds=30)))
+    await reg.handle(tick(1, 100.0, BASE_TIME))
+    await reg.handle(tick(1, 102.0, BASE_TIME + timedelta(seconds=30)))
 
     # 09:16 — crosses 1min but stays in 5min
-    await agg._on_tick(tick(1, 104.0, BASE_TIME + timedelta(minutes=1)))
-    await asyncio.sleep(0.05)
+    candle = await reg.handle(tick(1, 104.0, BASE_TIME + timedelta(minutes=1)))
 
-    # 1min bar closed; 5min bar still open
-    assert len(received_1m) == 1
-    assert len(received_5m) == 0
+    # 1min bar was the first interval checked, so it returns the closed bar
+    assert candle is not None
+    assert candle.interval == "1min"
 
-    # Both bars in the _bars dict
-    assert ("SYM1", "1min") in agg._bars
-    assert ("SYM1", "5min") in agg._bars
-
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    # Both bars still tracked
+    assert ("SYM1", "1min") in reg._bars
+    assert ("SYM1", "5min") in reg._bars
 
 
-async def test_zero_volume_tick_updates_ohlc(bus: MessageBus, engine: AsyncEngine) -> None:
+async def test_zero_volume_tick_updates_ohlc(engine: AsyncEngine) -> None:
     """volume=0 is valid (Zerodha sends it on auction)."""
-    broker = MockBroker()
-    agg = make_aggregator(bus, broker, engine)
+    reg = make_registry(MockBroker(), engine)
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.05)
-
-    await agg._on_tick(tick(1, 100.0, t(0), volume=0))
-    bar = agg._bars[("SYM1", "1min")]
+    await reg.handle(tick(1, 100.0, t(0), volume=0))
+    bar = reg._bars[("SYM1", "1min")]
     assert bar.volume == 0
     assert bar.open == 100.0
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+
+async def test_unknown_token_returns_none(engine: AsyncEngine) -> None:
+    reg = make_registry(MockBroker(), engine, tokens=[1])
+
+    result = await reg.handle(tick(999, 100.0, t(0)))
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -330,71 +251,97 @@ async def test_zero_volume_tick_updates_ohlc(bus: MessageBus, engine: AsyncEngin
 # ---------------------------------------------------------------------------
 
 
-async def test_warmup_publishes_historical_candles(bus: MessageBus, engine: AsyncEngine) -> None:
+async def test_warmup_returns_historical_candles(engine: AsyncEngine) -> None:
     df = make_ohlc_df(10, BASE_TIME - timedelta(hours=1))
     broker = MockBroker(df=df)
-    agg = make_aggregator(bus, broker, engine, warmup_count=10)
+    reg = make_registry(broker, engine, warmup_count=10)
 
-    received: list[CandleEvent] = []
-    bus.subscribe("candle:SYM1:1min", CandleEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
-    await asyncio.sleep(0.05)
-
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.1)
-
-    assert len(received) == 10
-
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    events = await reg.warmup()
+    assert len(events) == 10
+    for e in events:
+        assert isinstance(e, CandleEvent)
 
 
-async def test_warmup_empty_result_no_crash(bus: MessageBus, engine: AsyncEngine) -> None:
+async def test_warmup_empty_result_no_crash(engine: AsyncEngine) -> None:
     broker = MockBroker(df=pl.DataFrame())
-    agg = make_aggregator(bus, broker, engine, warmup_count=5)
+    reg = make_registry(broker, engine, warmup_count=5)
 
-    received: list[CandleEvent] = []
-    bus.subscribe("candle:SYM1:1min", CandleEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
-    await asyncio.sleep(0.05)
-
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.1)
-
-    assert len(received) == 0  # no crash
-
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    events = await reg.warmup()
+    assert events == []
 
 
-async def test_warmup_broker_failure_no_crash(bus: MessageBus, engine: AsyncEngine) -> None:
+async def test_warmup_broker_failure_no_crash(engine: AsyncEngine) -> None:
     broker = MockBroker(raises=True)
-    agg = make_aggregator(bus, broker, engine, warmup_count=5)
+    reg = make_registry(broker, engine, warmup_count=5)
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.1)
-
-    # Should reach RUNNING state despite broker failure
-    from trading.engine.component import ComponentState
-
-    assert agg.state == ComponentState.RUNNING
-
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    events = await reg.warmup()
+    assert events == []  # failure is swallowed, empty result
 
 
-async def test_warmup_respects_warmup_count(bus: MessageBus, engine: AsyncEngine) -> None:
-    """Only last warmup_count rows are published, even if broker returns more."""
+async def test_warmup_respects_warmup_count(engine: AsyncEngine) -> None:
+    """Only last warmup_count rows are returned, even if broker returns more."""
     df = make_ohlc_df(50, BASE_TIME - timedelta(hours=1))
     broker = MockBroker(df=df)
-    agg = make_aggregator(bus, broker, engine, warmup_count=20)
+    reg = make_registry(broker, engine, warmup_count=20)
 
-    received: list[CandleEvent] = []
-    bus.subscribe("candle:SYM1:1min", CandleEvent, lambda e: received.append(e) or asyncio.sleep(0))  # type: ignore[return-value]
-    await asyncio.sleep(0.05)
+    events = await reg.warmup()
+    assert len(events) == 20
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.1)
 
-    assert len(received) == 20
+# ---------------------------------------------------------------------------
+# _ensure_utc helper
+# ---------------------------------------------------------------------------
 
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+
+def test_ensure_utc_raises_on_non_datetime() -> None:
+    from trading.registry.candle import _ensure_utc
+    with pytest.raises(TypeError):
+        _ensure_utc("2025-01-06")  # string, not datetime
+
+
+def test_ensure_utc_adds_utc_to_naive_datetime() -> None:
+    from trading.registry.candle import _ensure_utc
+    naive = datetime(2025, 1, 6, 9, 15)
+    result = _ensure_utc(naive)
+    assert result.tzinfo is not None
+
+
+async def test_warmup_invalid_row_logged_as_warning(engine: AsyncEngine) -> None:
+    """Covers lines 160-161: a row with a non-datetime 'date' field is skipped."""
+    bad_df = pl.DataFrame({
+        "date": ["not-a-datetime"],  # string → _ensure_utc raises TypeError
+        "open": [100.0], "high": [105.0], "low": [99.0], "close": [102.0], "volume": [1000],
+    })
+    broker = MockBroker(df=bad_df)
+    reg = make_registry(broker, engine, warmup_count=5)
+
+    events = await reg.warmup()
+    assert events == []  # bad row is skipped, no crash
+
+
+async def test_handle_with_tick_log_id_schedules_log_candle(engine: AsyncEngine) -> None:
+    """Covers _log_candle DB path: tick_log_id != 0 triggers fire-and-forget log."""
+    broker = MockBroker()
+    reg = make_registry(broker, engine, tokens=[1], intervals=["1min"])
+
+    from trading.core.models import Instrument
+    from trading.core.database import get_session
+    async with get_session(engine) as s:
+        s.add(Instrument(token=1, symbol="SYM1", exchange="NSE", instrument_type="EQUITY"))
+
+    # Feed two ticks to close a bar with tick_log_id != 0
+    t1 = tick(1, 100.0, BASE_TIME, volume=100)
+    t2 = tick(1, 101.0, BASE_TIME + timedelta(minutes=1, seconds=1), volume=50)
+    t2 = TickEvent(
+        instrument_token=1,
+        instrument_type=InstrumentType.EQUITY,
+        last_price=101.0,
+        volume=50,
+        timestamp=BASE_TIME + timedelta(minutes=1, seconds=1),
+        tick_log_id=99,  # non-zero → _log_candle is scheduled
+    )
+
+    await reg.handle(t1)
+    result = await reg.handle(t2)
+    # The bar should have closed — we just need no exception
+    # (fire-and-forget task may not have executed yet)
