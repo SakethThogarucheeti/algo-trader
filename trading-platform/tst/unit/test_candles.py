@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.broker.base.broker import Broker
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
 from trading.data.candles import CandleAggregator, _bar_open_time, _SymbolConfig
 from trading.storage.repository import Repository
@@ -103,7 +103,7 @@ def fake_redis() -> fakeredis.aioredis.FakeRedis:
 
 @pytest.fixture
 def bus(fake_redis: fakeredis.aioredis.FakeRedis) -> MessageBus:
-    return MessageBus(fake_redis)
+    return RedisMessageBus(fake_redis)
 
 
 @pytest.fixture

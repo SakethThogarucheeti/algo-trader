@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 
 # ---------------------------------------------------------------------------
 # Testcontainers — real Postgres + Redis, scope=session
@@ -94,7 +94,7 @@ async def redis_client(redis_container) -> Redis:
 @pytest.fixture
 def bus(redis_client) -> MessageBus:
     """MessageBus backed by the real test Redis."""
-    return MessageBus(redis_client)
+    return RedisMessageBus(redis_client)
 
 
 # ---------------------------------------------------------------------------

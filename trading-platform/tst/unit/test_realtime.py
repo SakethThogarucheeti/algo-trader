@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 from trading.core.models import Instrument
 from trading.core.schemas import InstrumentType, TickEvent
 from trading.data.realtime import KiteIngestor
@@ -91,7 +91,7 @@ def fake_redis() -> fakeredis.aioredis.FakeRedis:
 
 @pytest.fixture
 def bus(fake_redis: fakeredis.aioredis.FakeRedis) -> MessageBus:
-    return MessageBus(fake_redis)
+    return RedisMessageBus(fake_redis)
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import fakeredis.aioredis
 import pytest
 
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 from trading.core.schemas import InstrumentType, TickEvent
 
 NOW = datetime.now(UTC)
@@ -33,7 +33,7 @@ def fake_redis() -> fakeredis.aioredis.FakeRedis:
 
 @pytest.fixture
 def bus(fake_redis: fakeredis.aioredis.FakeRedis) -> MessageBus:
-    return MessageBus(fake_redis)
+    return RedisMessageBus(fake_redis)
 
 
 # ---------------------------------------------------------------------------

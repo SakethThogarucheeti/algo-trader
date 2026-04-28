@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import (
 
 from trading.config.settings import Settings
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 from trading.di.container import build_container
 from trading.storage.repository import Repository
 
@@ -58,7 +58,7 @@ class FakeInfraProvider(Provider):
 
     @provide
     def message_bus(self, redis: Redis) -> MessageBus:  # type: ignore[type-arg]
-        return MessageBus(redis)
+        return RedisMessageBus(redis)
 
     @provide
     def repository(self) -> Repository:

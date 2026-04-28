@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.config.settings import Settings
 from trading.core.database import build_session_factory, init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 from trading.core.models import Order, Position, Signal
 from trading.core.schemas import (
     InstrumentType,
@@ -84,10 +84,14 @@ def make_settings(**overrides: object) -> Settings:
     base = dict(
         zerodha_api_key="key",
         zerodha_api_secret="secret",
+        zerodha_access_token="token",
         postgres_url="postgresql+asyncpg://u:p@localhost/t",
         redis_url="redis://localhost",
         risk_per_trade_pct=1.0,
         max_daily_loss_pct=2.0,
+        # Explicitly pin paper_trading=False so the daily-loss-limit check runs
+        # regardless of any PAPER_TRADING env var set in the developer's .env.
+        paper_trading=False,
         # Use 23:59 so tests never fail due to time-of-day regardless of when they run.
         # Tests that explicitly check the cutoff rule override these values.
         intraday_cutoff_hour=23,
@@ -126,7 +130,7 @@ def fake_redis() -> fakeredis.aioredis.FakeRedis:
 
 @pytest.fixture
 def bus(fake_redis: fakeredis.aioredis.FakeRedis) -> MessageBus:
-    return MessageBus(fake_redis)
+    return RedisMessageBus(fake_redis)
 
 
 def make_controller(
