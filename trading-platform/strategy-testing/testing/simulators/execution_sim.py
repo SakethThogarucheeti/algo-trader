@@ -10,7 +10,7 @@ from uuid import uuid4
 import polars as pl
 
 from trading.broker.base.broker import Broker
-from trading.broker.paper_broker import PriceStore
+from trading.broker.paper_broker import AbstractPriceStore
 from trading.core.schemas import OrderType, Side
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class SlippageFillSimulator(Broker):
 
     def __init__(
         self,
-        price_store: PriceStore,
+        price_store: AbstractPriceStore,
         slippage_pct: float = 0.05,
         partial_fill_prob: float = 0.0,
         latency_secs: float = 0.0,

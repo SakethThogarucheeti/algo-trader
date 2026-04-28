@@ -16,12 +16,12 @@ from testing.backtesting.portfolio import TradeRecord
 from testing.monte_carlo.report import MonteCarloConfig
 from testing.monte_carlo.simulator import MonteCarloSimulator
 
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 
 
 def _bus() -> MessageBus:
     client: Redis = fakeredis.FakeRedis()
-    return MessageBus(client)
+    return RedisMessageBus(client)
 
 
 def _trades(
@@ -107,9 +107,10 @@ async def test_ruin_probability_high_for_losing_strategy(tmp_path):
     sim = MonteCarloSimulator(config=config, trades=trades, bus=bus, results_dir=tmp_path)
     report = await sim.run()
 
-    assert (
-        report.probability_of_ruin > 0.1
-    ), f"Losing strategy should have significant ruin probability, got {report.probability_of_ruin:.2%}"
+    assert report.probability_of_ruin > 0.1, (
+        "Losing strategy should have significant ruin probability,"
+        f" got {report.probability_of_ruin:.2%}"
+    )
 
 
 @pytest.mark.asyncio

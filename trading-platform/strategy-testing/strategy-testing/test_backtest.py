@@ -212,7 +212,9 @@ def _real_algo(name: str, symbols: list[str]) -> AlgoSettings:
     )
 
 
-@pytest.mark.skipif(not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first")
+@pytest.mark.skipif(
+    not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first"
+)
 async def test_ema_crossover_real_data_completes(pg_engine, redis_client, bus, tmp_path):
     """EMA crossover on real Zerodha data must complete and produce a valid report."""
     config = BacktestConfig(
@@ -233,7 +235,7 @@ async def test_ema_crossover_real_data_completes(pg_engine, redis_client, bus, t
 
     # Print a summary so it's visible in pytest output
     print(f"\n{'='*55}")
-    print(f"  EMA Crossover — Real Data Backtest")
+    print("  EMA Crossover — Real Data Backtest")
     print(f"  Symbols  : {', '.join(_REAL_DATA_SYMBOLS)}")
     print(f"  Period   : {_REAL_START.date()} to {_REAL_END.date()}")
     print(f"  Equity   : {_REAL_EQUITY:,.0f} -> {report.final_equity:,.2f}")
@@ -246,7 +248,9 @@ async def test_ema_crossover_real_data_completes(pg_engine, redis_client, bus, t
     print(f"{'='*55}")
 
 
-@pytest.mark.skipif(not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first")
+@pytest.mark.skipif(
+    not _DATA_DIR.exists(), reason="data/ directory not found — run uv run fetch-data first"
+)
 @pytest.mark.parametrize("symbol", _REAL_DATA_SYMBOLS)
 async def test_ema_crossover_per_symbol(pg_engine, redis_client, bus, tmp_path, symbol):
     """EMA crossover on each symbol individually — surfaces per-symbol edge cases."""

@@ -18,28 +18,52 @@ from testing.backtesting.portfolio import TradeRecord
 # ---------------------------------------------------------------------------
 
 
-def _returns(equity_curve: pl.DataFrame) -> pl.Series:
-    """Compute period-over-period fractional returns from the equity curve."""
-    eq = equity_curve["equity"]
+def _daily_equity(equity_curve: pl.DataFrame) -> pl.DataFrame:
+    """
+    Resample the equity curve to one row per calendar day (last snapshot of
+    each day). Days with no fills carry forward the previous day's equity.
+
+    Returns a DataFrame with columns [date (Date), equity (Float64)].
+    """
+    if len(equity_curve) == 0:
+        return equity_curve
+
+    df = equity_curve.with_columns(
+        pl.col("date").dt.date().alias("day")
+    )
+    # Last equity value per calendar day
+    daily = (
+        df.group_by("day")
+        .agg(pl.col("equity").last())
+        .sort("day")
+    )
+    return daily.rename({"day": "date"})
+
+
+def _daily_returns(equity_curve: pl.DataFrame) -> pl.Series:
+    """Compute daily fractional returns, forward-filling missing days."""
+    daily = _daily_equity(equity_curve)
+    if len(daily) < 2:
+        return pl.Series([], dtype=pl.Float64)
+    eq = daily["equity"]
     prev = eq.shift(1)
     return ((eq - prev) / prev).drop_nulls()
 
 
 def sharpe_ratio(equity_curve: pl.DataFrame, risk_free_rate: float = 0.0) -> float:
     """
-    Annualised Sharpe ratio.
+    Annualised Sharpe ratio computed on **daily** returns (252 trading days/year).
 
-    Uses simple period returns from the equity curve. The number of periods
-    per year is inferred from the median gap between rows (falls back to 252
-    trading-day equivalent if the curve has fewer than 2 rows).
+    The equity curve is resampled to one row per calendar day before computing
+    returns, so irregular intra-day fill timestamps don't inflate the ratio.
 
-    Returns 0.0 if there are insufficient data points or zero variance.
+    Returns 0.0 if there are fewer than 2 daily observations or zero variance.
     """
     if len(equity_curve) < 2:
         return 0.0
 
-    rets = _returns(equity_curve)
-    if len(rets) == 0:
+    rets = _daily_returns(equity_curve)
+    if len(rets) < 2:
         return 0.0
 
     mean_ret = rets.mean()
@@ -48,11 +72,8 @@ def sharpe_ratio(equity_curve: pl.DataFrame, risk_free_rate: float = 0.0) -> flo
     if std_ret is None or std_ret == 0.0:
         return 0.0
 
-    # Estimate periods per year from median time gap
-    periods_per_year = _periods_per_year(equity_curve)
-
-    excess = float(mean_ret) - risk_free_rate / periods_per_year
-    return float(excess / std_ret * math.sqrt(periods_per_year))
+    excess = float(mean_ret) - risk_free_rate / 252.0
+    return float(excess / std_ret * math.sqrt(252.0))
 
 
 def max_drawdown(equity_curve: pl.DataFrame) -> float:
@@ -137,9 +158,18 @@ def profit_factor(trades: list[TradeRecord]) -> float:
     return gross_profit / gross_loss
 
 
-def cagr(equity_curve: pl.DataFrame, initial_equity: float) -> float:
+def cagr(
+    equity_curve: pl.DataFrame,
+    initial_equity: float,
+    start: object = None,
+    end: object = None,
+) -> float:
     """
     Compound annual growth rate.
+
+    ``start`` and ``end`` (datetime-like) pin the backtest period so CAGR is
+    computed against the full intended window rather than just the span between
+    the first and last fill. When omitted the curve's own date range is used.
 
     Returns 0.0 if the curve has fewer than 2 rows or time span is 0.
     """
@@ -149,14 +179,32 @@ def cagr(equity_curve: pl.DataFrame, initial_equity: float) -> float:
     dates = equity_curve["date"].to_list()
     final_eq = float(equity_curve["equity"][-1])
 
-    years = (dates[-1] - dates[0]).total_seconds() / (365.25 * 86400)
+    period_start = start if start is not None else dates[0]
+    period_end = end if end is not None else dates[-1]
+
+    # Handle polars Date vs datetime
+    from datetime import date as _date
+    from datetime import datetime as _datetime
+    def _to_dt(d: object) -> _datetime:
+        if isinstance(d, _date) and not isinstance(d, _datetime):
+            from datetime import UTC
+            return _datetime(d.year, d.month, d.day, tzinfo=UTC)
+        return d  # type: ignore[return-value]
+
+    period_start = _to_dt(period_start)
+    period_end = _to_dt(period_end)
+
+    years = (period_end - period_start).total_seconds() / (365.25 * 86400)
     if years <= 0:
         return 0.0
 
-    return (final_eq / initial_equity) ** (1.0 / years) - 1.0
+    ratio = final_eq / initial_equity
+    if ratio <= 0:
+        return -1.0  # total ruin — can't take a root of a non-positive number
+    return ratio ** (1.0 / years) - 1.0
 
 
-def calmar_ratio(equity_curve: pl.DataFrame) -> float:
+def calmar_ratio(equity_curve: pl.DataFrame, start: object = None, end: object = None) -> float:
     """
     CAGR divided by maximum drawdown.
 
@@ -166,7 +214,7 @@ def calmar_ratio(equity_curve: pl.DataFrame) -> float:
         return 0.0
 
     initial_eq = float(equity_curve["equity"][0])
-    _cagr = cagr(equity_curve, initial_eq)
+    _cagr = cagr(equity_curve, initial_eq, start=start, end=end)
     _mdd = max_drawdown(equity_curve)
 
     if _mdd == 0.0:
@@ -174,23 +222,3 @@ def calmar_ratio(equity_curve: pl.DataFrame) -> float:
     return _cagr / _mdd
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _periods_per_year(equity_curve: pl.DataFrame) -> float:
-    """Estimate number of periods per year from median bar gap. Default: 252."""
-    if len(equity_curve) < 2:
-        return 252.0
-
-    dates = equity_curve["date"].to_list()
-    gaps = [(dates[i + 1] - dates[i]).total_seconds() for i in range(len(dates) - 1)]
-    if not gaps:
-        return 252.0
-
-    median_gap_secs = sorted(gaps)[len(gaps) // 2]
-    if median_gap_secs <= 0:
-        return 252.0
-
-    return (365.25 * 86400) / median_gap_secs

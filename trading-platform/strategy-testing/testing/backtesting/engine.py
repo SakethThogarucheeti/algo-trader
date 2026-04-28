@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from testing.backtesting.data_loader import DataLoader
+from testing.local_bus import LocalMessageBus
 from testing.backtesting.metrics import (
     cagr,
     calmar_ratio,
@@ -25,9 +28,10 @@ from testing.session import SessionProgressEvent, TestingSession
 from testing.simulators.execution_sim import SlippageFillSimulator
 from trading.broker.paper_broker import PriceStore
 from trading.config.settings import Settings
+from trading.core.clock import SimulatedClock
 from trading.core.database import build_session_factory, init_db
 from trading.core.messaging import MessageBus
-from trading.core.schemas import FillEvent, InstrumentType, OrderEvent, Side, ValidatedOrderEvent
+from trading.core.schemas import FillEvent, InstrumentType, Side
 from trading.data.candles import _SymbolConfig
 from trading.di.providers.execution import make_execution_engine
 from trading.di.providers.features import make_feature_engine
@@ -63,11 +67,15 @@ class BacktestSession(TestingSession):
         redis: Redis,
         bus: MessageBus,
         results_dir: Path,
+        db_schema: str = "public",
+        keep_schema: bool = False,
     ) -> None:
         super().__init__(bus=bus, results_dir=results_dir)
         self._config = config
         self._db_engine = db_engine
         self._redis = redis
+        self._db_schema = db_schema
+        self._keep_schema = keep_schema
 
     async def run(self) -> BacktestReport:
         config = self._config
@@ -75,16 +83,29 @@ class BacktestSession(TestingSession):
         config.session_id = session_id
         started_at = self._now()
 
+        logger.info(
+            "BacktestSession[%s]: starting  algo=%s  start=%s  end=%s  equity=%.0f",
+            self._db_schema, config.algo.name,
+            config.start.date(), config.end.date(), config.initial_equity,
+        )
+
+        # Replace the Redis-backed bus with an in-process bus for this backtest.
+        # All component wiring happens locally — no Redis round-trips per bar.
+        self._bus = LocalMessageBus()
+
         partial_report: BacktestReport | None = None
+        schema_engine = None
         tracker = EquityTracker(config.initial_equity)
 
         try:
             # ------------------------------------------------------------------
-            # 1. Infrastructure
+            # 1. Infrastructure — schema-isolated engine for parallel safety
             # ------------------------------------------------------------------
-            sf = build_session_factory(self._db_engine)
-            await init_db(self._db_engine)  # idempotent in tests
+            schema_engine = await _make_schema_engine(self._db_engine, self._db_schema)
+            sf = build_session_factory(schema_engine)
+            await init_db(schema_engine)
             repo = Repository()
+            logger.debug("BacktestSession[%s]: DB schema ready", self._db_schema)
 
             # ------------------------------------------------------------------
             # 2. Simulator broker + price store
@@ -118,33 +139,29 @@ class BacktestSession(TestingSession):
                     price_store.update(sym, float(df["close"][0]))
 
             # ------------------------------------------------------------------
-            # 4. Synthetic Settings for risk controller (no time cutoff, paper mode)
+            # 4. Simulated clock + synthetic Settings
+            #    The clock is advanced at each candle bar so the risk controller
+            #    sees the bar's timestamp (not wall clock) for the time cutoff.
             # ------------------------------------------------------------------
+            sim_clock = SimulatedClock()
             synthetic_settings = _make_backtest_settings()
 
             # ------------------------------------------------------------------
-            # 5. Subscribe to fills for equity tracking
+            # 5. Channel names + fill tracking
             # ------------------------------------------------------------------
             signals_channel = f"signals:{algo.name}"
             validated_orders_channel = f"validated_orders:{algo.name}"
+            orders_channel = f"orders:{algo.name}"
+            fills_channel = f"fills:{algo.name}"
 
-            # Correlate: signal_id → (symbol, side) from ValidatedOrderEvent
-            #            signal_id → kite_order_id  from OrderEvent
-            # Combined → kite_order_id → (symbol, side) for tracker.record_order()
-            _sig_to_symbol: dict[str, tuple[str, Side]] = {}
+            # Register the kite_order_id→(symbol, side) mapping synchronously
+            # inside the executor, before any FillEvent is published.  This
+            # avoids the pub/sub race where on_fill_event arrived before the
+            # _on_order bus handler had a chance to call record_order().
+            def _on_order_placed(kite_order_id: str, symbol: str, side: Side) -> None:
+                tracker.record_order(kite_order_id, symbol, side)
 
-            async def _on_validated(vo: ValidatedOrderEvent) -> None:
-                _sig_to_symbol[str(vo.signal_id)] = (vo.symbol, vo.side)
-
-            async def _on_order(oe: OrderEvent) -> None:
-                entry = _sig_to_symbol.get(str(oe.signal_id))
-                if entry is not None:
-                    symbol_, side_ = entry
-                    tracker.record_order(oe.kite_order_id, symbol_, side_)
-
-            self._bus.subscribe(validated_orders_channel, ValidatedOrderEvent, _on_validated)
-            self._bus.subscribe("orders", OrderEvent, _on_order)
-            self._bus.subscribe("fills", FillEvent, tracker.on_fill_event)
+            self._bus.subscribe(fills_channel, FillEvent, tracker.on_fill_event)
 
             # ------------------------------------------------------------------
             # 6. Build components
@@ -156,8 +173,10 @@ class BacktestSession(TestingSession):
                 symbols=algo.instruments,
                 instrument_types={s: InstrumentType.EQUITY for s in algo.instruments},
                 intervals=intervals,
-                strategy=make_strategy(algo.strategy_id),
-                feature_engine=make_feature_engine(algo.feature_engine_id),
+                strategy=make_strategy(algo.strategy_id, config.strategy_params or None),
+                feature_engine=make_feature_engine(
+                    algo.feature_engine_id, config.feature_engine_params or None
+                ),
                 session_factory=sf,
                 repo=repo,
             )
@@ -171,6 +190,7 @@ class BacktestSession(TestingSession):
                 equity=config.initial_equity,
                 signals_channel=signals_channel,
                 validated_orders_channel=validated_orders_channel,
+                clock=sim_clock,
             )
 
             execution_engine = make_execution_engine(
@@ -180,6 +200,9 @@ class BacktestSession(TestingSession):
                 repo=repo,
                 sf=sf,
                 price_store=price_store,
+                orders_channel=orders_channel,
+                fills_channel=fills_channel,
+                on_order_placed=_on_order_placed,
             )
 
             order_executor = OrderExecutor(
@@ -193,8 +216,9 @@ class BacktestSession(TestingSession):
             # ------------------------------------------------------------------
             total_bars = sum(len(df) for df in data.values())
             bars_done: list[int] = [0]
+            _last_snapshot_ts: list[datetime | None] = [None]
 
-            async def _on_progress(n: int) -> None:
+            async def _on_progress(n: int, bar_ts: datetime) -> None:
                 bars_done[0] = n
                 pct = n / total_bars if total_bars > 0 else 1.0
                 await self._emit_progress(
@@ -207,8 +231,15 @@ class BacktestSession(TestingSession):
                         timestamp=self._now(),
                     )
                 )
-                # Update price store with latest close prices from data
-                # (the simulator reads from price_store for fills)
+                # Advance the simulated clock so the risk controller sees the
+                # bar's timestamp for the intraday cutoff check.
+                sim_clock.advance(bar_ts)
+                # Snapshot equity at each unique bar timestamp so the equity
+                # curve is a properly-dated daily series (not wall-clock stamped).
+                # Multiple symbols share a timestamp; snapshot once per unique ts.
+                if bar_ts != _last_snapshot_ts[0]:
+                    tracker.snapshot(bar_ts)
+                    _last_snapshot_ts[0] = bar_ts
 
             from testing.simulators.candle_player import CandlePlayer
 
@@ -230,6 +261,7 @@ class BacktestSession(TestingSession):
                 on_progress=_on_progress,
                 data=data,
                 replay_delay_secs=config.replay_delay_secs,
+                on_bar_price=price_store.update,
             )
 
             # ------------------------------------------------------------------
@@ -259,8 +291,8 @@ class BacktestSession(TestingSession):
                 max_drawdown_duration=max_drawdown_duration(eq_curve),
                 win_rate=win_rate(trades),
                 profit_factor=profit_factor(trades),
-                cagr=cagr(eq_curve, config.initial_equity),
-                calmar_ratio=calmar_ratio(eq_curve),
+                cagr=cagr(eq_curve, config.initial_equity, start=config.start, end=config.end),
+                calmar_ratio=calmar_ratio(eq_curve, start=config.start, end=config.end),
                 total_trades=len(trades),
                 final_equity=tracker.current_equity,
                 session_id=session_id,
@@ -269,11 +301,26 @@ class BacktestSession(TestingSession):
                 finished_at=self._now(),
             )
             partial_report = report
+            logger.info(
+                "BacktestSession[%s]: complete  trades=%d  sharpe=%.3f  pnl=%+.0f"
+                "  win_rate=%.0f%%  max_dd=%.1f%%  equity=%.0f",
+                self._db_schema,
+                report.total_trades,
+                report.sharpe_ratio,
+                report.final_equity - config.initial_equity,
+                report.win_rate * 100,
+                report.max_drawdown * 100,
+                report.final_equity,
+            )
             return report
 
         finally:
             if partial_report is not None:
                 await self._persist(partial_report)
+            if schema_engine is not None:
+                if not self._keep_schema:
+                    await _drop_schema(self._db_engine, self._db_schema)
+                await schema_engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +347,44 @@ def _load_data(
             except FileNotFoundError:
                 logger.warning("BacktestSession: no data for %s/%s — skipping", symbol, interval)
     return data
+
+
+# Intra-process lock: serializes DDL coroutines within the same process.
+_schema_create_lock = asyncio.Lock()
+
+
+async def _make_schema_engine(base_engine: AsyncEngine, schema: str) -> AsyncEngine:
+    """
+    Create (or reset) a Postgres schema and return an engine whose connections
+    have ``search_path`` pinned to that schema.
+
+    DDL is serialized via a process-level asyncio.Lock. Run grid searches
+    sequentially (one pytest process at a time) to avoid cross-process catalog
+    deadlocks — Postgres cannot serialize DDL across separate OS processes.
+    """
+    async with _schema_create_lock:
+        async with base_engine.begin() as conn:
+            await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+
+    return create_async_engine(
+        base_engine.url,
+        echo=False,
+        connect_args={
+            "server_settings": {"search_path": schema},
+            "prepared_statement_cache_size": 0,
+        },
+    )
+
+
+async def _drop_schema(base_engine: AsyncEngine, schema: str) -> None:
+    """Drop the isolated schema after the session completes."""
+    if schema == "public":
+        return  # never drop the default schema
+
+    async with _schema_create_lock:
+        async with base_engine.begin() as conn:
+            await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
 
 
 def _make_backtest_settings() -> Settings:

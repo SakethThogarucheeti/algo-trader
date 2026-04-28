@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.core.database import init_db
-from trading.core.messaging import MessageBus
+from trading.core.messaging import MessageBus, RedisMessageBus
 
 # Add strategy-testing/ to path so `import testing` resolves
 sys.path.insert(0, str(Path(__file__).parent))
@@ -106,4 +106,4 @@ async def redis_client(redis_container) -> Redis:
 @pytest.fixture
 def bus(redis_client) -> MessageBus:
     """MessageBus backed by the real test Redis."""
-    return MessageBus(redis_client)
+    return RedisMessageBus(redis_client)

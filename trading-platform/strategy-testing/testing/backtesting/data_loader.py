@@ -27,19 +27,19 @@ def _validate_dataframe(df: pl.DataFrame, source: str) -> None:
             # Try casting — the data might be integer-encoded prices
             try:
                 df = df.with_columns(pl.col(col).cast(pl.Float64))
-            except Exception:
+            except Exception as exc:
                 raise ValueError(
                     f"DataLoader [{source}]: column {col!r} cannot be cast to Float64 "
                     f"(current dtype: {df[col].dtype})"
-                )
+                ) from exc
     if df["volume"].dtype not in (pl.Int32, pl.Int64, pl.UInt32, pl.UInt64):
         try:
             df = df.with_columns(pl.col("volume").cast(pl.Int64))
-        except Exception:
+        except Exception as exc:
             raise ValueError(
                 f"DataLoader [{source}]: column 'volume' cannot be cast to Int64 "
                 f"(current dtype: {df['volume'].dtype})"
-            )
+            ) from exc
 
 
 # ---------------------------------------------------------------------------

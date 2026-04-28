@@ -40,6 +40,10 @@ class BacktestConfig(SessionConfig):
     replay_delay_secs: float = 0.0
     session_id: str = ""
 
+    # Hyperparameter overrides — forwarded to make_strategy / make_feature_engine
+    strategy_params: dict = field(default_factory=dict)
+    feature_engine_params: dict = field(default_factory=dict)
+
 
 def _missing(name: str) -> object:
     raise TypeError(f"BacktestConfig: required field {name!r} was not provided")

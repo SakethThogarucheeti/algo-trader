@@ -49,9 +49,10 @@ class CandlePlayer(Component):
         end: datetime,
         runtime: Runtime,
         bus: MessageBus,
-        on_progress: Callable[[int], Awaitable[None]],
+        on_progress: Callable[[int, datetime], Awaitable[None]],
         data: dict[tuple[str, str], pl.DataFrame],  # (symbol, interval) → OHLCV df
         replay_delay_secs: float = 0.0,
+        on_bar_price: Callable[[str, float], None] | None = None,
     ) -> None:
         super().__init__(name="candle_player")
         self._symbols = symbols
@@ -63,6 +64,7 @@ class CandlePlayer(Component):
         self._on_progress = on_progress
         self._data = data
         self._replay_delay_secs = replay_delay_secs
+        self._on_bar_price = on_bar_price
         self._event_queue: list[tuple[datetime, str, str, CandleEvent]] = []
 
     async def _setup(self) -> None:
@@ -108,7 +110,11 @@ class CandlePlayer(Component):
 
     async def _run(self) -> None:
         bars_done = 0
-        for _ts, symbol, interval, event in self._event_queue:
+        for bar_ts, symbol, interval, event in self._event_queue:
+            # Keep the price store current so fills use the actual bar close.
+            if self._on_bar_price is not None:
+                self._on_bar_price(symbol, event.close)
+
             channel = f"candle:{symbol}:{interval}"
             await self._bus.publish(channel, event)
 
@@ -117,7 +123,7 @@ class CandlePlayer(Component):
 
             bars_done += 1
             try:
-                await self._on_progress(bars_done)
+                await self._on_progress(bars_done, bar_ts)
             except Exception:
                 logger.debug("CandlePlayer: on_progress callback raised", exc_info=True)
 

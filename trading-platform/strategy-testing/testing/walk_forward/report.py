@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import TYPE_CHECKING, Literal
 
 import polars as pl
@@ -60,8 +60,8 @@ class WalkForwardReport(SessionReport):
     # SessionReport fields
     session_id: str = ""
     session_type: str = "walk_forward"
-    started_at: datetime = field(default_factory=datetime.utcnow)
-    finished_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=field(default_factory=lambda: datetime.now(UTC)))
+    finished_at: datetime = field(default_factory=field(default_factory=lambda: datetime.now(UTC)))
 
     def to_dict(self) -> dict[str, object]:
         return {
