@@ -101,13 +101,14 @@ class Component(ABC):
         polling components.
         """
 
-    async def _teardown(self) -> None:  # noqa: B027
+    async def _teardown(self) -> None:
         """
         Optional cleanup. Called after _run() exits, before state → STOPPED.
 
         Override to close connections, flush buffers, or release resources.
         Default is a no-op.
         """
+        pass
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name!r}, state={self.state.value})"

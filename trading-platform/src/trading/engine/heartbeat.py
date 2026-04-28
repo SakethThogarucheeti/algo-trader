@@ -5,7 +5,7 @@ import logging
 from anyio import create_task_group, sleep
 
 from trading.engine.component import Component
-from trading.storage.repository import Repository
+from trading.storage.base import AbstractRepository
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class HeartbeatMonitor(Component):
 
     def __init__(
         self,
-        repo: Repository,
+        repo: AbstractRepository,
         session_factory,  # async_sessionmaker[AsyncSession]
         component_names: list[str],
         beat_interval_secs: int = 5,

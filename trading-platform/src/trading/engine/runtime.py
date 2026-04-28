@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 
 from anyio import CancelScope, create_task_group, sleep_forever
 
@@ -9,7 +10,31 @@ from trading.engine.component import Component
 logger = logging.getLogger(__name__)
 
 
-class Runtime:
+class AbstractRuntime(ABC):
+    """
+    Supervisor interface for a set of components.
+
+    Implementations decide the startup ordering, shutdown strategy, and
+    restart behaviour.  The default ``Runtime`` starts components in order
+    and stops them in reverse; alternative implementations could add
+    health-check restarts, dependency graphs, etc.
+    """
+
+    @abstractmethod
+    async def start(self) -> None:
+        """Start all components and block until ``stop()`` is called."""
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Signal all components to shut down."""
+
+    @property
+    @abstractmethod
+    def running(self) -> bool:
+        """True while the runtime is active."""
+
+
+class Runtime(AbstractRuntime):
     """
     Supervises a list of components with ordered startup and shutdown.
 
