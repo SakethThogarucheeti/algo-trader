@@ -25,21 +25,8 @@ class TechnicalFeatureEngine(FeatureEngine):
     Maintains a rolling Polars DataFrame per (symbol, interval) and
     computes technical indicators on each update.
 
-    Usage
-    -----
-    Call ``update(candle_event)`` on every new candle. It returns a full
-    DataFrame with all indicators appended as columns. Downstream consumers
-    (strategies) call ``.tail(n)`` as needed.
-
-    Indicators
-    ----------
-    - ``ema_{n}`` — EMA of close for each span in *ema_spans*
-    - ``rsi_14``  — 14-period RSI, range [0, 100]
-    - ``atr_{n}`` — Average True Range for *atr_period*
-    - ``vwap``    — Cumulative VWAP, resets at session open (09:15 IST)
-
-    All indicators are null/NaN while insufficient data exists.
-    No TA-Lib dependency — computed with Polars expressions only.
+    Indicators: ema_{n}, rsi_14, atr_{n}, vwap. All null while warming up.
+    No TA-Lib — computed with Polars expressions only.
 
     Parameters
     ----------
@@ -50,6 +37,8 @@ class TechnicalFeatureEngine(FeatureEngine):
     atr_period:
         ATR smoothing period. Default: 14.
     """
+
+    alias = "technical"
 
     def __init__(
         self,
