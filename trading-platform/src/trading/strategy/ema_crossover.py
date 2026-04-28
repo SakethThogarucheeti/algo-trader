@@ -41,6 +41,8 @@ class EmaCrossoverStrategy(Strategy):
         - ATR is 0 or negative (stop distance would be zero — reject).
     """
 
+    alias = "ema_crossover"
+
     def __init__(
         self,
         fast: int = _DEFAULT_FAST,
@@ -64,10 +66,6 @@ class EmaCrossoverStrategy(Strategy):
         self._last_slow: float | None = None
         self._last_atr: float | None = None
         self._last_close: float | None = None
-
-    @property
-    def id(self) -> str:
-        return "ema_crossover"
 
     def get_state(self) -> dict[str, object]:
         return {

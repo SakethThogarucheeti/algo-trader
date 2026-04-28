@@ -49,6 +49,8 @@ _DEFAULT_ATR_MULTIPLIER = 1.0
 class VwapReversionStrategy(Strategy):
     """Mean-revert to session VWAP when price extends by N × ATR."""
 
+    alias = "vwap_reversion"
+
     def __init__(
         self,
         vwap_band: float = _DEFAULT_VWAP_BAND,
@@ -60,10 +62,6 @@ class VwapReversionStrategy(Strategy):
         self._vwap_band = vwap_band
         self._atr_col = f"atr_{atr_period}"
         self._atr_multiplier = atr_multiplier
-
-    @property
-    def id(self) -> str:
-        return "vwap_reversion"
 
     def on_candle(
         self,

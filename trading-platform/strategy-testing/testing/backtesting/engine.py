@@ -32,7 +32,7 @@ from trading.core.clock import SimulatedClock
 from trading.core.database import build_session_factory, init_db
 from trading.core.messaging import MessageBus
 from trading.core.schemas import FillEvent, InstrumentType, Side
-from trading.data.candles import _SymbolConfig
+from trading.registry.candle import _SymbolConfig
 from trading.di.providers.execution import make_execution_engine
 from trading.di.providers.features import make_feature_engine
 from trading.di.providers.risk import make_risk_controller

@@ -59,6 +59,8 @@ class OpeningRangeBreakoutStrategy(Strategy):
     State is maintained per symbol so concurrent symbols don't interfere.
     """
 
+    alias = "opening_range_breakout"
+
     def __init__(
         self,
         orb_bars: int = _DEFAULT_ORB_BARS,
@@ -75,10 +77,6 @@ class OpeningRangeBreakoutStrategy(Strategy):
 
         # Per-symbol state: (session_date, or_high, or_low, signal_taken)
         self._state: dict[str, tuple[object, float, float, bool]] = {}
-
-    @property
-    def id(self) -> str:
-        return "opening_range_breakout"
 
     def on_candle(
         self,

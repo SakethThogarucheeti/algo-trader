@@ -9,7 +9,7 @@ import polars as pl
 
 from trading.core.messaging import MessageBus
 from trading.core.schemas import CandleEvent
-from trading.data.candles import _SymbolConfig
+from trading.registry.candle import _SymbolConfig
 from trading.engine.component import Component
 from trading.engine.runtime import Runtime
 

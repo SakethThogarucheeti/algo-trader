@@ -48,6 +48,8 @@ _DEFAULT_ATR_MULTIPLIER = 1.5
 class RsiMeanReversionStrategy(Strategy):
     """RSI mean-reversion: buy the oversold bounce, sell the overbought fade."""
 
+    alias = "rsi_mean_reversion"
+
     def __init__(
         self,
         rsi_period: int = _DEFAULT_RSI_PERIOD,
@@ -63,10 +65,6 @@ class RsiMeanReversionStrategy(Strategy):
         self._oversold = oversold
         self._overbought = overbought
         self._atr_multiplier = atr_multiplier
-
-    @property
-    def id(self) -> str:
-        return "rsi_mean_reversion"
 
     def on_candle(
         self,
