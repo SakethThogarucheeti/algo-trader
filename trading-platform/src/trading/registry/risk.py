@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from trading.core.messaging import AbstractRegistry
+from trading.core.tasks import fire
+from trading.core.schemas import (
+    OrderType,
+    Side,
+    SignalEvent,
+    SignalType,
+    ValidatedOrderEvent,
+)
+from trading.core.clock import Clock, SystemClock
+from trading.registry.tick import CircuitBreaker
+from trading.risk.sizer import calculate_quantity
+from trading.storage.base import AbstractRepository
+
+logger = logging.getLogger(__name__)
+
+_AFTER_CUTOFF = "AFTER_CUTOFF"
+_CIRCUIT_OPEN = "CIRCUIT_OPEN"
+_DAILY_LOSS_LIMIT = "DAILY_LOSS_LIMIT"
+_ALREADY_IN_POSITION = "ALREADY_IN_POSITION"
+_ZERO_QUANTITY = "ZERO_QUANTITY"
+
+
+class RiskConfig(BaseModel):
+    """Configuration for the risk evaluation stage."""
+
+    equity: float = Field(default=100_000.0, gt=0)
+    max_daily_loss_pct: float = Field(default=2.0, gt=0, le=100)
+    risk_per_trade_pct: float = Field(default=1.0, gt=0, le=100)
+    rc_id: str = "default"
+    paper_trading: bool = False
+    intraday_cutoff_hour: int = Field(default=15, ge=0, le=23)
+    intraday_cutoff_minute: int = Field(default=30, ge=0, le=59)
+
+
+class RiskRegistry(AbstractRegistry):
+    """
+    Evaluates a SignalEvent against risk rules before forwarding it.
+
+    Receives the CircuitBreaker from TickRegistry (same instance) so it can
+    check whether the ingestor WebSocket is currently healthy.
+
+    Returns a ValidatedOrderEvent if the signal passes all checks, None if rejected.
+    """
+
+    def __init__(
+        self,
+        config: RiskConfig,
+        circuit: CircuitBreaker,
+        session_factory: async_sessionmaker[AsyncSession],
+        repo: AbstractRepository,
+        clock: Clock | None = None,
+    ) -> None:
+        self._config = config
+        self._circuit = circuit
+        self._session_factory = session_factory
+        self._repo = repo
+        self._clock: Clock = clock or SystemClock()
+
+    # ------------------------------------------------------------------
+    # AbstractRegistry
+    # ------------------------------------------------------------------
+
+    async def handle(self, event: SignalEvent) -> ValidatedOrderEvent | None:
+        """
+        Run the 5-step risk pipeline. Returns ValidatedOrderEvent or None.
+        """
+        from datetime import time
+
+        now = self._clock.now()
+        today = now.date()
+        cutoff = time(self._config.intraday_cutoff_hour, self._config.intraday_cutoff_minute)
+
+        # 1. Time cutoff
+        if now.time() > cutoff:
+            await self._reject(event, _AFTER_CUTOFF)
+            return None
+
+        # 2. Circuit breaker
+        if self._circuit.is_open():
+            await self._reject(event, _CIRCUIT_OPEN)
+            return None
+
+        async with self._session_factory() as session:
+            async with session.begin():
+                # 3. Daily loss limit (skipped in paper mode)
+                if not self._config.paper_trading:
+                    pnl = await self._repo.get_daily_realized_pnl(session, today)
+                    limit = self._config.equity * self._config.max_daily_loss_pct / 100.0
+                    if abs(pnl) >= limit:
+                        await self._reject(event, _DAILY_LOSS_LIMIT)
+                        return None
+
+                # 4. Duplicate position check
+                if event.signal_type == SignalType.ENTRY:
+                    pos = await self._repo.get_position(
+                        session, event.symbol, event.instrument_type.value
+                    )
+                    if pos is not None and pos.net_qty != 0:
+                        if (pos.net_qty > 0 and event.side == Side.BUY) or (
+                            pos.net_qty < 0 and event.side == Side.SELL
+                        ):
+                            await self._reject(event, _ALREADY_IN_POSITION)
+                            return None
+
+                # 5. Size the order
+                qty = calculate_quantity(
+                    stop_distance=event.stop_distance,
+                    equity=self._config.equity,
+                    risk_pct=self._config.risk_per_trade_pct,
+                    lot_size=None,
+                )
+                if qty == 0:
+                    await self._reject(event, _ZERO_QUANTITY)
+                    return None
+
+                await self._repo.log_audit(
+                    session,
+                    "risk_registry",
+                    "INFO",
+                    f"signal {event.signal_id} accepted qty={qty}",
+                )
+
+        # Persist the Signal row before returning (FK needed by OrderExecutor)
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    await self._repo.save_signal(session, event)
+        except Exception:
+            logger.warning(
+                "RiskRegistry: failed to persist signal %s — order will proceed but audit incomplete",
+                event.signal_id,
+            )
+
+        fire(self._log_decision("SIGNAL_ACCEPTED", event, {"qty": qty, "order_type": "MARKET"}))
+        logger.info(
+            "RiskRegistry: ACCEPTED signal=%s symbol=%s side=%s qty=%d",
+            event.signal_id, event.symbol, event.side.value, qty,
+        )
+        return ValidatedOrderEvent(
+            signal_id=event.signal_id,
+            symbol=event.symbol,
+            instrument_type=event.instrument_type,
+            side=event.side,
+            quantity=qty,
+            order_type=OrderType.MARKET,
+            limit_price=None,
+            tick_log_id=event.tick_log_id,
+        )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    async def _reject(self, event: SignalEvent, reason: str) -> None:
+        logger.info("RiskRegistry: REJECTED signal=%s reason=%s", event.signal_id, reason)
+        fire(self._log_decision("SIGNAL_REJECTED", event, {"reason": reason}))
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    await self._repo.log_audit(
+                        session, "risk_registry", "WARNING",
+                        f"signal {event.signal_id} rejected: {reason}",
+                    )
+        except Exception:
+            logger.debug("RiskRegistry: audit log failed for rejection %s", event.signal_id)
+
+    async def _log_decision(self, step: str, event: SignalEvent, context: dict) -> None:
+        if event.tick_log_id == 0:
+            return
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    await self._repo.log_decision(
+                        session,
+                        step=step,
+                        symbol=event.symbol,
+                        tick_log_id=event.tick_log_id,
+                        context=context,
+                        signal_id=event.signal_id,
+                    )
+        except Exception:
+            logger.warning("RiskRegistry: decision log failed for signal %s", event.signal_id)
