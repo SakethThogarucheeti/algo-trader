@@ -50,6 +50,16 @@ class Strategy(ABC):
     def id(self) -> str:
         """Unique identifier used to select this strategy by name in AlgoConfig."""
 
+    def get_state(self) -> dict[str, object]:
+        """
+        Return a snapshot of live strategy internals for the monitoring dashboard.
+
+        Override to expose strategy-specific values (e.g. current EMA values,
+        position state). The dict is merged into ``algo_state.state`` in Postgres
+        after every candle. Default implementation returns an empty dict.
+        """
+        return {}
+
     @abstractmethod
     def on_candle(
         self,
