@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -415,3 +416,89 @@ async def test_log_audit_never_raises_on_repeated_calls(engine: AsyncEngine) -> 
         async with get_session(engine) as s:
             await repo.log_audit(s, "monitor", "INFO", f"heartbeat {i}")
     # no exception raised
+
+
+# ---------------------------------------------------------------------------
+# AlgoConfig / AlgoState
+# ---------------------------------------------------------------------------
+
+
+async def test_seed_algo_config_creates_new(engine: AsyncEngine) -> None:
+    from trading.core.models import AlgoConfig as AlgoConfigModel
+    async with get_session(engine) as s:
+        await repo.seed_algo_config(
+            s, name="test_algo", strategy_id="ema_crossover",
+            warmup_candles=200, candle_intervals=["1min"],
+            equity=10_000.0, params={"fast": 9},
+        )
+
+    async with get_session(engine) as s:
+        cfg = await s.get(AlgoConfigModel, "test_algo")
+    assert cfg is not None
+    assert cfg.strategy_id == "ema_crossover"
+
+
+async def test_seed_algo_config_skips_existing(engine: AsyncEngine) -> None:
+    """Calling seed_algo_config twice should not overwrite or error."""
+    from trading.core.models import AlgoConfig as AlgoConfigModel
+    async with get_session(engine) as s:
+        await repo.seed_algo_config(
+            s, name="dup_algo", strategy_id="ema_crossover",
+            warmup_candles=200, candle_intervals=["1min"],
+            equity=10_000.0, params={},
+        )
+    async with get_session(engine) as s:
+        await repo.seed_algo_config(
+            s, name="dup_algo", strategy_id="rsi_mean_reversion",  # changed
+            warmup_candles=100, candle_intervals=["5min"],
+            equity=5_000.0, params={},
+        )
+
+    async with get_session(engine) as s:
+        cfg = await s.get(AlgoConfigModel, "dup_algo")
+    assert cfg is not None
+    assert cfg.strategy_id == "ema_crossover"  # original preserved
+
+
+async def test_upsert_algo_state_insert_then_update(engine: AsyncEngine) -> None:
+    """First call inserts; second call updates the existing row."""
+    from trading.core.models import AlgoState as AlgoStateModel
+    async with get_session(engine) as s:
+        await repo.upsert_algo_state(s, "my:INFY", {"bars_seen": 1})
+
+    async with get_session(engine) as s:
+        state = await s.get(AlgoStateModel, "my:INFY")
+    assert state is not None
+    assert json.loads(state.state)["bars_seen"] == 1
+
+    async with get_session(engine) as s:
+        await repo.upsert_algo_state(s, "my:INFY", {"bars_seen": 42})
+
+    async with get_session(engine) as s:
+        state = await s.get(AlgoStateModel, "my:INFY")
+    assert state is not None
+    assert json.loads(state.state)["bars_seen"] == 42
+
+
+async def test_get_algo_configs_with_state(engine: AsyncEngine) -> None:
+    from trading.core.models import AlgoConfig as AlgoConfigModel, AlgoState as AlgoStateModel
+    async with get_session(engine) as s:
+        s.add(AlgoConfigModel(
+            name="cfg1", strategy_id="ema_crossover", warmup_candles=200,
+            candle_intervals=json.dumps(["1min"]), equity=10_000.0, params=json.dumps({"fast": 9}),
+        ))
+        s.add(AlgoStateModel(name="cfg1", state=json.dumps({"bars_seen": 10})))
+        s.add(AlgoConfigModel(
+            name="cfg2", strategy_id="rsi_mean_reversion", warmup_candles=100,
+            candle_intervals=json.dumps(["5min"]), equity=5_000.0, params=json.dumps({}),
+        ))
+        # cfg2 has no AlgoState row
+
+    async with get_session(engine) as s:
+        results = await repo.get_algo_configs_with_state(s)
+
+    assert len(results) == 2
+    by_name = {r["name"]: r for r in results}
+    assert by_name["cfg1"]["state"]["bars_seen"] == 10
+    assert by_name["cfg2"]["state"] == {}
+    assert by_name["cfg2"]["updated_at"] is None
