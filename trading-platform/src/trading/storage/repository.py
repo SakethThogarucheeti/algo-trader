@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trading.core.models import (
+    AlgoConfig,
+    AlgoState,
     AuditLog,
     DecisionLog,
     Heartbeat,
@@ -19,13 +21,14 @@ from trading.core.models import (
     TickLog,
 )
 from trading.core.schemas import FillEvent, OrderStatus, Side, SignalEvent, TickEvent
+from trading.storage.base import AbstractRepository
 
 
 class NotFoundError(Exception):
     """Raised when a required DB row is absent."""
 
 
-class Repository:
+class Repository(AbstractRepository):
     """
     The only layer that touches the database.
 
@@ -283,8 +286,72 @@ class Repository:
             received_at=event.timestamp,
         )
         session.add(row)
-        await session.flush()  # sends INSERT → Postgres assigns row.id via RETURNING
+        await session.flush()  # sends INSERT → Postgres assigns row.id via RETURNING before commit
         return row.id
+
+    # ------------------------------------------------------------------
+    # Algo config and state
+    # ------------------------------------------------------------------
+
+    async def seed_algo_config(
+        self,
+        session: AsyncSession,
+        name: str,
+        strategy_id: str,
+        warmup_candles: int,
+        candle_intervals: list[str],
+        equity: float,
+        params: dict[str, object],
+    ) -> None:
+        existing = await session.get(AlgoConfig, name)
+        if existing is None:
+            session.add(
+                AlgoConfig(
+                    name=name,
+                    strategy_id=strategy_id,
+                    warmup_candles=warmup_candles,
+                    candle_intervals=json.dumps(candle_intervals),
+                    equity=equity,
+                    params=json.dumps(params),
+                )
+            )
+
+    async def upsert_algo_state(
+        self,
+        session: AsyncSession,
+        name: str,
+        state: dict[str, object],
+    ) -> None:
+        existing = await session.get(AlgoState, name)
+        if existing is None:
+            session.add(AlgoState(name=name, state=json.dumps(state)))
+        else:
+            existing.state = json.dumps(state)
+            existing.updated_at = datetime.now(UTC)
+
+    async def get_algo_configs_with_state(
+        self, session: AsyncSession
+    ) -> list[dict[str, object]]:
+        result = await session.execute(select(AlgoConfig))
+        configs = result.scalars().all()
+        out = []
+        for cfg in configs:
+            state_obj = await session.get(AlgoState, cfg.name)
+            state = json.loads(state_obj.state) if state_obj else {}
+            out.append(
+                {
+                    "name": cfg.name,
+                    "strategy_id": cfg.strategy_id,
+                    "warmup_candles": cfg.warmup_candles,
+                    "candle_intervals": json.loads(cfg.candle_intervals),
+                    "equity": cfg.equity,
+                    "enabled": cfg.enabled,
+                    "params": json.loads(cfg.params),
+                    "state": state,
+                    "updated_at": state_obj.updated_at.isoformat() if state_obj else None,
+                }
+            )
+        return out
 
     # ------------------------------------------------------------------
     # Decision logging
