@@ -182,6 +182,21 @@
 
 <main>
 
+  <!-- Algo Status -->
+  <div class="card full-width">
+    <div class="card-header">
+      <span>Algo Status</span>
+      <span class="htmx-indicator" id="algo-spinner">loading…</span>
+    </div>
+    <div class="card-body"
+         id="algo-body"
+         hx-get="/api/algos"
+         hx-trigger="load, every 5s"
+         hx-indicator="#algo-spinner">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+
   <!-- Positions -->
   <div class="card">
     <div class="card-header">
@@ -212,13 +227,26 @@
     </div>
   </div>
 
+  <!-- Tick price chart -->
+  <div class="card">
+    <div class="card-header">
+      <span>Tick Price</span>
+      <span id="tick-symbol" style="font-size:11px;color:var(--accent)">INFY</span>
+    </div>
+    <div class="card-body">
+      <div id="tick-chart-container" style="position:relative;height:200px;">
+        <canvas id="tick-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
   <!-- P&L chart -->
-  <div class="card full-width">
+  <div class="card">
     <div class="card-header">
       <span>Cumulative P&amp;L</span>
     </div>
     <div class="card-body">
-      <div id="pnl-chart-container">
+      <div id="pnl-chart-container" style="position:relative;height:200px;">
         <canvas id="pnl-chart"></canvas>
       </div>
     </div>
@@ -295,6 +323,76 @@ function onSessionChange(value) {
 // P&L chart (Chart.js)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tick price chart (Chart.js)
+// ---------------------------------------------------------------------------
+
+let tickChart = null;
+
+function initTickChart() {
+  const ctx = document.getElementById("tick-chart").getContext("2d");
+  tickChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Last Price",
+        data: [],
+        borderColor: "#6366f1",
+        backgroundColor: "rgba(99,102,241,0.06)",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => "₹ " + ctx.parsed.y.toFixed(2)
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#64748b", maxTicksLimit: 6, font: { size: 10 } },
+          grid: { color: "#1e2130" }
+        },
+        y: {
+          ticks: { color: "#64748b", font: { size: 10 }, callback: v => "₹" + v.toFixed(2) },
+          grid: { color: "#1e2130" }
+        }
+      }
+    }
+  });
+}
+
+async function refreshTicks() {
+  if (!tickChart) return;
+  try {
+    const symbol = document.getElementById("tick-symbol").textContent.trim();
+    const res = await fetch(`/api/ticks?symbol=${encodeURIComponent(symbol)}&limit=500`);
+    const points = await res.json();
+    tickChart.data.labels = points.map(p => {
+      const d = new Date(p.ts);
+      return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    });
+    tickChart.data.datasets[0].data = points.map(p => p.price);
+    tickChart.update("none");
+  } catch (e) {
+    console.warn("Tick fetch failed:", e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// P&L chart (Chart.js)
+// ---------------------------------------------------------------------------
+
 let pnlChart = null;
 
 function initChart() {
@@ -321,7 +419,15 @@ function initChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => "₹ " + ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })
+            label: ctx => {
+              const p = (ctx.chart._tradePoints || [])[ctx.dataIndex];
+              if (!p) return "₹ " + ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 });
+              const arrow = p.side === "BUY" ? "▲" : "▼";
+              return [
+                `${arrow} ${p.side} ${p.symbol} x${p.qty} @ ₹${p.price.toFixed(2)}`,
+                `Cumulative P&L: ₹${ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+              ];
+            }
           }
         }
       },
@@ -349,12 +455,25 @@ async function refreshPnl() {
     const qs = currentSession ? "?session_id=" + encodeURIComponent(currentSession) : "";
     const res = await fetch("/api/pnl" + qs);
     const points = await res.json();
+
     pnlChart.data.labels = points.map(p => {
       const d = new Date(p.ts);
       return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
     });
     pnlChart.data.datasets[0].data = points.map(p => p.cumulative_pnl);
-    // colour the line red if P&L is negative overall
+
+    // Per-point marker colours: BUY=green dot, SELL=red dot
+    pnlChart.data.datasets[0].pointRadius = points.map(() => 6);
+    pnlChart.data.datasets[0].pointBackgroundColor = points.map(p =>
+      p.side === "BUY" ? "#22c55e" : "#ef4444"
+    );
+    pnlChart.data.datasets[0].pointBorderColor = points.map(p =>
+      p.side === "BUY" ? "#22c55e" : "#ef4444"
+    );
+
+    // Store raw points for tooltip access
+    pnlChart._tradePoints = points;
+
     const last = points.length ? points[points.length - 1].cumulative_pnl : 0;
     pnlChart.data.datasets[0].borderColor = last >= 0 ? "#6366f1" : "#ef4444";
     pnlChart.update("none");
@@ -410,6 +529,9 @@ function startSSE(sessionId) {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadSessions();
+  initTickChart();
+  refreshTicks();
+  setInterval(refreshTicks, 5_000);
   initChart();
   refreshPnl();
   setInterval(refreshPnl, 30_000);

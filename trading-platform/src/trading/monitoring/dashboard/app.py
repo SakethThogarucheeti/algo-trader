@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from trading.core.models import DecisionLog, Heartbeat, Order, Position
+from trading.core.models import DecisionLog, Heartbeat, Order, Position, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +156,45 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
         )
 
     # ------------------------------------------------------------------
+    # GET /api/algos — algo config + live state (htmx fragment)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/algos", response_class=HTMLResponse)
+    async def get_algos() -> HTMLResponse:
+        from trading.storage.repository import Repository
+        repo = Repository()
+        async with session_factory() as session:
+            algos = await repo.get_algo_configs_with_state(session)
+
+        if not algos:
+            return HTMLResponse(_empty_table("No algo configs found — bot not started yet"))
+
+        cards = "".join(_algo_card(a) for a in algos)
+        return HTMLResponse(cards)
+
+    # ------------------------------------------------------------------
+    # GET /api/ticks?symbol=&limit= — recent tick prices (Chart.js JSON)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/ticks")
+    async def get_ticks(symbol: str = "INFY", limit: int = 500) -> JSONResponse:
+        async with session_factory() as session:
+            from trading.core.models import TickLog
+            result = await session.execute(
+                select(TickLog)
+                .where(TickLog.symbol == symbol)
+                .order_by(TickLog.received_at.desc())
+                .limit(limit)
+            )
+            ticks = list(reversed(result.scalars().all()))
+
+        points = [
+            {"ts": t.received_at.isoformat(), "price": float(t.last_price)}
+            for t in ticks
+        ]
+        return JSONResponse(content=points)
+
+    # ------------------------------------------------------------------
     # GET /api/pnl?session_id= — cumulative P&L time series (Chart.js JSON)
     # ------------------------------------------------------------------
 
@@ -163,21 +202,27 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
     async def get_pnl(session_id: str = "") -> JSONResponse:
         async with session_factory() as session:
             result = await session.execute(
-                select(Order).where(Order.status == "FILLED").order_by(Order.created_at)
+                select(Order, Signal)
+                .join(Signal, Order.signal_id == Signal.id)
+                .where(Order.status == "FILLED")
+                .order_by(Order.created_at)
             )
-            orders = result.scalars().all()
+            rows = result.all()
 
         cumulative = 0.0
         points: list[dict[str, object]] = []
-        for order in orders:
-            # Approximation: each filled order contributes qty * avg_price to cash flow.
-            # SELL = money in (+), BUY = money out (−). We track absolute P&L movement.
+        for order, signal in rows:
             cumulative += float(order.avg_price) * order.qty
             ts = order.created_at
             points.append(
                 {
                     "ts": ts.isoformat() if ts else "",
                     "cumulative_pnl": round(cumulative, 2),
+                    "side": signal.side,
+                    "qty": order.qty,
+                    "price": float(order.avg_price),
+                    "symbol": signal.symbol,
+                    "signal_type": signal.signal_type,
                 }
             )
 
@@ -286,3 +331,52 @@ def _context_summary(context_json: str) -> str:
         return ", ".join(f"{k}={v}" for k, v in list(ctx.items())[:3])
     except Exception:
         return context_json[:60] if context_json else "—"
+
+
+def _algo_card(algo: dict[str, object]) -> str:
+    state: dict[str, object] = algo.get("state", {})  # type: ignore[assignment]
+    bars_seen = state.get("bars_seen", 0)
+    warmup_candles = state.get("warmup_candles") or algo.get("warmup_candles", 0)
+    warmup_complete = state.get("warmup_complete", False)
+    bars_remaining = state.get("bars_remaining", warmup_candles)
+    last_signal_at = state.get("last_signal_at") or "—"
+    params: dict[str, object] = algo.get("params", {})  # type: ignore[assignment]
+
+    pct = min(100, int(bars_seen / warmup_candles * 100)) if warmup_candles else 100
+    bar_colour = "var(--pos)" if warmup_complete else "var(--neutral)"
+    status_label = (
+        "<span class='pos'>LIVE</span>"
+        if warmup_complete
+        else f"<span class='neutral'>{bars_remaining} bars until live</span>"
+    )
+
+    # Strategy params rows
+    param_rows = "".join(
+        f"<tr><td style='color:var(--muted)'>{k}</td><td>{v}</td></tr>"
+        for k, v in params.items()
+    ) if params else ""
+
+    # Live state rows — skip internal bookkeeping keys shown elsewhere
+    _skip = {"bars_seen", "warmup_candles", "warmup_complete", "bars_remaining", "last_signal_at"}
+    state_rows = "".join(
+        f"<tr><td style='color:var(--muted)'>{k}</td><td>{v if v is not None else '—'}</td></tr>"
+        for k, v in state.items()
+        if k not in _skip
+    )
+
+    return f"""
+<div style="margin-bottom:1rem;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+    <span style="font-weight:600">{algo['name']}</span>
+    <span style="font-size:11px;color:var(--muted)">{algo['strategy_id']}</span>
+    {status_label}
+  </div>
+  <div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:0.6rem;">
+    <div style="width:{pct}%;height:6px;border-radius:4px;background:{bar_colour};transition:width 0.5s;"></div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:0.5rem;">
+    {bars_seen} / {warmup_candles} warm-up bars &nbsp;·&nbsp; last signal: {last_signal_at}
+  </div>
+  {"<table class='data-table' style='margin-bottom:0.4rem'>" + param_rows + "</table>" if param_rows else ""}
+  {"<table class='data-table'>" + state_rows + "</table>" if state_rows else ""}
+</div>"""
