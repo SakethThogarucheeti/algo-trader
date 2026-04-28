@@ -4,7 +4,7 @@ import logging
 from datetime import time
 from functools import lru_cache
 
-from pydantic import BaseModel, Field, PostgresDsn, RedisDsn, field_validator, model_validator
+from pydantic import BaseModel, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _log = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Infrastructure — required                                           #
     # ------------------------------------------------------------------ #
     postgres_url: PostgresDsn
-    redis_url: RedisDsn
+    redis_url: str | None = None
 
     # ------------------------------------------------------------------ #
     # Risk controls — optional with safe defaults                         #
@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     heartbeat_timeout_secs: int = Field(default=15, gt=0)
     candle_intervals: list[str] = Field(default=["1min", "5min", "15min"])
     warmup_candles: int = Field(default=200, gt=0)
+    circuit_timeout_secs: float = Field(default=30.0, gt=0)
+    ws_connect_timeout_secs: float = Field(default=30.0, gt=0)
+    order_timeout_secs: float = Field(default=10.0, gt=0)
 
     # ------------------------------------------------------------------ #
     # Paper trading — simulates orders without hitting Zerodha            #
@@ -92,7 +95,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     dashboard_enabled: bool = True
     dashboard_host: str = "127.0.0.1"
-    dashboard_port: int = 8080
+    dashboard_port: int = 8081
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -9,9 +9,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.core.clock import Clock, SYSTEM_CLOCK
 from trading.core.models import DecisionLog, Heartbeat, Order, Position, Signal
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,10 @@ logger = logging.getLogger(__name__)
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
+def build_app(
+    session_factory: async_sessionmaker[AsyncSession],
+    clock: Clock = SYSTEM_CLOCK,
+) -> FastAPI:
     """
     Build the monitoring dashboard FastAPI application.
 
@@ -33,6 +37,10 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
     - Named string    → backtest / Monte Carlo session
     """
     app = FastAPI(title="Algo Trading Dashboard", docs_url=None, redoc_url=None)
+
+    def _today_start() -> datetime:
+        now = clock.now()
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # ------------------------------------------------------------------
     # Root — serve the single-page dashboard
@@ -51,7 +59,7 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
     async def get_sessions() -> JSONResponse:
         async with session_factory() as session:
             result = await session.execute(
-                text("SELECT DISTINCT session_id FROM decision_logs ORDER BY session_id")
+                select(DecisionLog.session_id).distinct().order_by(DecisionLog.session_id)
             )
             rows = result.fetchall()
 
@@ -65,7 +73,11 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
     @app.get("/api/positions", response_class=HTMLResponse)
     async def get_positions() -> HTMLResponse:
         async with session_factory() as session:
-            result = await session.execute(select(Position).order_by(Position.symbol))
+            result = await session.execute(
+                select(Position)
+                .where(Position.updated_at >= _today_start())
+                .order_by(Position.symbol)
+            )
             positions = result.scalars().all()
 
         if not positions:
@@ -103,7 +115,7 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
         if not heartbeats:
             return HTMLResponse(_empty_table("No heartbeat data yet"))
 
-        now = datetime.now(UTC)
+        now = clock.now()
         stale_threshold = 30  # seconds — matches heartbeat_timeout_secs default
 
         rows_html = "".join(_heartbeat_row(hb, now, stale_threshold) for hb in heartbeats)
@@ -127,6 +139,7 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
                     DecisionLog.step.in_(
                         ["SIGNAL_GENERATED", "SIGNAL_ACCEPTED", "SIGNAL_REJECTED"]
                     ),
+                    DecisionLog.created_at >= _today_start(),
                     _session_filter(DecisionLog, session_id),
                 )
                 .order_by(DecisionLog.created_at.desc())
@@ -182,7 +195,10 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
             from trading.core.models import TickLog
             result = await session.execute(
                 select(TickLog)
-                .where(TickLog.symbol == symbol)
+                .where(
+                    TickLog.symbol == symbol,
+                    TickLog.received_at >= _today_start(),
+                )
                 .order_by(TickLog.received_at.desc())
                 .limit(limit)
             )
@@ -204,7 +220,10 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
             result = await session.execute(
                 select(Order, Signal)
                 .join(Signal, Order.signal_id == Signal.id)
-                .where(Order.status == "FILLED")
+                .where(
+                    Order.status == "FILLED",
+                    Order.created_at >= _today_start(),
+                )
                 .order_by(Order.created_at)
             )
             rows = result.all()
@@ -235,6 +254,7 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
     @app.get("/api/decisions/stream")
     async def decisions_stream(request: Request, session_id: str = "") -> StreamingResponse:
         async def _event_generator() -> AsyncIterator[str]:
+            yield ": connected\n\n"  # triggers EventSource.onopen immediately
             last_id = 0
             while True:
                 if await request.is_disconnected():
@@ -245,6 +265,7 @@ def build_app(session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
                             select(DecisionLog)
                             .where(
                                 DecisionLog.id > last_id,
+                                DecisionLog.created_at >= _today_start(),
                                 _session_filter(DecisionLog, session_id),
                             )
                             .order_by(DecisionLog.id)
