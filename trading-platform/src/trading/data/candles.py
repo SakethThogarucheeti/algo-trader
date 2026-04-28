@@ -238,6 +238,9 @@ class CandleAggregator(Component):
         asyncio.get_running_loop().create_task(self._log_candle_decision(event))
 
     async def _log_candle_decision(self, event: CandleEvent) -> None:
+        if event.tick_log_id == 0:
+            # Warm-up or pre-migration candle — no tick_logs row exists, skip.
+            return
         try:
             async with self._session_factory() as session:
                 async with session.begin():
@@ -258,9 +261,11 @@ class CandleAggregator(Component):
                     )
         except Exception:
             logger.warning(
-                "CandleAggregator: decision log failed for %s %s — audit trail gap",
+                "CandleAggregator: decision log failed for %s %s (tick_log_id=%d) — audit trail gap",
                 event.symbol,
                 event.interval,
+                event.tick_log_id,
+                exc_info=True,
             )
 
 

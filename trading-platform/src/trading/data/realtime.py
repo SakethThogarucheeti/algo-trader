@@ -191,11 +191,9 @@ class KiteIngestor(Component):
         # then commit asynchronously so the commit round-trip is off the
         # critical path. The event is not published until flush completes.
         try:
-            session = self._session_factory()
-            async with session:
-                tick_log_id = await self._repo.log_tick(session, raw_event, symbol)
-                # Background commit — we have the id from flush already
-                asyncio.get_running_loop().create_task(session.commit())
+            async with self._session_factory() as session:
+                async with session.begin():
+                    tick_log_id = await self._repo.log_tick(session, raw_event, symbol)
         except Exception as exc:
             logger.warning(
                 "KiteIngestor: failed to persist tick for token %s — %s; publishing without DB id",

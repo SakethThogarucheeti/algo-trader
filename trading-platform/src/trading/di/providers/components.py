@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.broker.base.broker import Broker
 from trading.broker.base.broker_stream import BrokerStream
-from trading.broker.paper_broker import PriceStore
+from trading.broker.paper_broker import AbstractPriceStore
 from trading.config.settings import AlgoSettings, Settings
 from trading.core.messaging import MessageBus
 from trading.data.candles import CandleAggregator, _SymbolConfig
@@ -18,9 +18,9 @@ from trading.di.providers.risk import make_risk_controller
 from trading.di.providers.strategy import make_strategy
 from trading.engine.component import Component
 from trading.engine.heartbeat import HeartbeatMonitor
-from trading.engine.runtime import Runtime
+from trading.engine.runtime import AbstractRuntime, Runtime
 from trading.engine.scheduler import Scheduler
-from trading.storage.repository import Repository
+from trading.storage.base import AbstractRepository
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ class ComponentProvider(Provider):
         self,
         stream: BrokerStream,
         bus: MessageBus,
-        price_store: PriceStore,
-        repo: Repository,
+        price_store: AbstractPriceStore,
+        repo: AbstractRepository,
         settings: Settings,
         sf: async_sessionmaker[AsyncSession],
     ) -> KiteIngestor:
@@ -76,7 +76,7 @@ class ComponentProvider(Provider):
         self,
         bus: MessageBus,
         broker: Broker,
-        repo: Repository,
+        repo: AbstractRepository,
         settings: Settings,
         sf: async_sessionmaker[AsyncSession],
     ) -> CandleAggregator:
@@ -109,7 +109,7 @@ class ComponentProvider(Provider):
     @provide
     def heartbeat_monitor(
         self,
-        repo: Repository,
+        repo: AbstractRepository,
         sf: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> HeartbeatMonitor:
@@ -141,11 +141,11 @@ class ComponentProvider(Provider):
         heartbeat_monitor: HeartbeatMonitor,
         bus: MessageBus,
         broker: Broker,
-        repo: Repository,
-        price_store: PriceStore,
+        repo: AbstractRepository,
+        price_store: AbstractPriceStore,
         settings: Settings,
         sf: async_sessionmaker[AsyncSession],
-    ) -> Runtime:
+    ) -> AbstractRuntime:
         from sqlalchemy import select
 
         from trading.core.models import Instrument
@@ -200,6 +200,21 @@ class ComponentProvider(Provider):
             signals_channel = f"signals:{algo.name}"
             validated_orders_channel = f"validated_orders:{algo.name}"
 
+            strategy = make_strategy(algo.strategy_id)
+
+            # Seed algo config into DB on first run (never overwrites existing rows)
+            async with sf() as session:
+                async with session.begin():
+                    await repo.seed_algo_config(
+                        session,
+                        name=algo.name,
+                        strategy_id=algo.strategy_id,
+                        warmup_candles=settings.warmup_candles,
+                        candle_intervals=intervals,
+                        equity=algo.equity,
+                        params=strategy.get_state(),  # static params snapshot
+                    )
+
             algo_runners.append(
                 AlgoRunner(
                     bus=bus,
@@ -207,10 +222,11 @@ class ComponentProvider(Provider):
                     symbols=algo.instruments,
                     instrument_types=algo_symbol_types,
                     intervals=intervals,
-                    strategy=make_strategy(algo.strategy_id),
+                    strategy=strategy,
                     feature_engine=make_feature_engine(algo.feature_engine_id),
                     session_factory=sf,
                     repo=repo,
+                    warmup_candles=settings.warmup_candles,
                 )
             )
 
@@ -287,7 +303,7 @@ class ComponentProvider(Provider):
         )
 
     @provide
-    def scheduler(self, settings: Settings, runtime: Runtime) -> Scheduler:
+    def scheduler(self, settings: Settings, runtime: AbstractRuntime) -> Scheduler:
         return Scheduler(
             settings,
             on_market_open=runtime.start,
