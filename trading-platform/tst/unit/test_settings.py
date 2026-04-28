@@ -15,7 +15,6 @@ VALID = dict(
     zerodha_api_key="key123",
     zerodha_api_secret="secret123",
     postgres_url="postgresql+asyncpg://user:pass@localhost:5432/trading",
-    redis_url="redis://localhost:6379/0",
 )
 
 
@@ -34,7 +33,8 @@ def test_valid_settings_instantiates() -> None:
 
 
 def test_defaults_applied() -> None:
-    s = make()
+    # Bypass .env so we see the true code defaults, not developer overrides.
+    s = Settings(**{**VALID, "_env_file": None})  # type: ignore[arg-type]
     assert s.max_daily_loss_pct == 2.0
     assert s.risk_per_trade_pct == 1.0
     assert s.candle_intervals == ["1min", "5min", "15min"]
@@ -90,7 +90,6 @@ def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         _NoEnvSettings(  # type: ignore[call-arg]
             zerodha_api_secret="s",
             postgres_url=VALID["postgres_url"],
-            redis_url=VALID["redis_url"],
         )
     assert "zerodha_api_key" in str(exc.value)
 
@@ -101,22 +100,9 @@ def test_missing_postgres_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(  # type: ignore[call-arg]
             zerodha_api_key="k",
             zerodha_api_secret="s",
-            redis_url=VALID["redis_url"],
             _env_file=None,
         )
     assert "postgres_url" in str(exc.value)
-
-
-def test_missing_redis_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("REDIS_URL", raising=False)
-    with pytest.raises(ValidationError) as exc:
-        Settings(  # type: ignore[call-arg]
-            zerodha_api_key="k",
-            zerodha_api_secret="s",
-            postgres_url=VALID["postgres_url"],
-            _env_file=None,
-        )
-    assert "redis_url" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------
@@ -172,11 +158,6 @@ def test_candle_intervals_empty_raises() -> None:
 def test_invalid_postgres_url_raises() -> None:
     with pytest.raises(ValidationError):
         make(postgres_url="not-a-url")
-
-
-def test_invalid_redis_url_raises() -> None:
-    with pytest.raises(ValidationError):
-        make(redis_url="not-a-url")
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +219,6 @@ def test_get_settings_returns_same_object(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("ZERODHA_API_KEY", "k")
     monkeypatch.setenv("ZERODHA_API_SECRET", "s")
     monkeypatch.setenv("POSTGRES_URL", "postgresql+asyncpg://u:p@localhost/db")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
 
     first = get_settings()
     second = get_settings()

@@ -15,7 +15,6 @@ def make_settings(token: str | None = "BOT_TOKEN", chat_id: str | None = "CHAT_I
         zerodha_api_key="k",
         zerodha_api_secret="s",
         postgres_url="postgresql+asyncpg://u:p@localhost/t",
-        redis_url="redis://localhost",
         telegram_bot_token=token,
         telegram_chat_id=chat_id,
     )

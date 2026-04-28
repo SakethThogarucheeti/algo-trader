@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 
 from trading.core.schemas import InstrumentType, Side, SignalType
-from trading.strategy.examples.ema_crossover import EmaCrossoverStrategy
+from trading.strategy.ema_crossover import EmaCrossoverStrategy
 
 BASE_TIME = datetime(2025, 1, 6, 3, 45, 0, tzinfo=UTC)
 

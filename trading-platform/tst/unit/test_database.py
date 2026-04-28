@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from trading.core.database import get_session, init_db
+from trading.core.database import build_engine, drop_db, get_session, init_db
 from trading.core.models import AuditLog, Instrument, Order, Position, Signal
 
 NOW = datetime.now(UTC)
@@ -271,3 +271,20 @@ async def test_audit_log_append_only(engine: AsyncEngine) -> None:
         result = await s.execute(select(AuditLog))
         logs = result.scalars().all()
         assert len(logs) == 2
+
+
+async def test_drop_db_removes_tables(engine: AsyncEngine) -> None:
+    """Covers drop_db (lines 54-55)."""
+    from sqlalchemy import inspect, text
+
+    await drop_db(engine)
+    async with engine.connect() as conn:
+        table_names = await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
+    assert len(table_names) == 0
+
+
+def test_build_engine_returns_async_engine() -> None:
+    """Covers build_engine (line 18)."""
+    from sqlalchemy.ext.asyncio import AsyncEngine
+    eng = build_engine("sqlite+aiosqlite:///:memory:")
+    assert isinstance(eng, AsyncEngine)

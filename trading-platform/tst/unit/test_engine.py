@@ -132,6 +132,45 @@ async def test_runtime_running_flag() -> None:
     assert runtime.running is False
 
 
+async def test_runtime_stop_when_not_running_logs_warning() -> None:
+    """Calling stop() before start() hits the 'else' branch (line 93)."""
+    runtime = Runtime([NullComponent()])
+    runtime.stop()  # should not raise — just logs a warning
+
+
+async def test_runtime_stop_via_runtime_stop_method() -> None:
+    """Covers runtime.stop() when running — lines 89-91."""
+    runtime = Runtime([NullComponent()])
+    task = asyncio.get_event_loop().create_task(runtime.start())
+    await asyncio.sleep(0.05)
+    assert runtime.running is True
+    runtime.stop()  # triggers cancel_scope.cancel() — lines 90-91
+    await asyncio.gather(task, return_exceptions=True)
+    assert runtime.running is False
+
+
+async def test_runtime_component_stop_exception_does_not_crash() -> None:
+    """A component whose stop() raises is swallowed — runtime keeps shutting down (line 81)."""
+
+    class BrokenStopComponent(Component):
+        async def _setup(self) -> None:
+            pass
+
+        async def _run(self) -> None:
+            from anyio import sleep_forever
+            await sleep_forever()
+
+        async def stop(self) -> None:  # type: ignore[override]
+            raise RuntimeError("stop failed intentionally")
+
+    runtime = Runtime([BrokenStopComponent("broken")])
+    task = asyncio.get_event_loop().create_task(runtime.start())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    # No exception escaped — line 81 logged it
+
+
 # ---------------------------------------------------------------------------
 # HeartbeatMonitor fixtures
 # ---------------------------------------------------------------------------

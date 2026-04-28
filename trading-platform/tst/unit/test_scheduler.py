@@ -11,7 +11,6 @@ def make_settings() -> Settings:
         zerodha_api_key="k",
         zerodha_api_secret="s",
         postgres_url="postgresql+asyncpg://u:p@localhost/t",
-        redis_url="redis://localhost",
     )
 
 
