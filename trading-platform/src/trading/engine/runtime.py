@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 
@@ -56,9 +57,11 @@ class Runtime(AbstractRuntime):
         self._components = components
         self._running = False
         self._cancel_scope: CancelScope | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self) -> None:
         """Start all components in order, then block until stop() is called."""
+        self._loop = asyncio.get_running_loop()
         self._running = True
         logger.info("Runtime: starting %d components", len(self._components))
         try:
@@ -86,11 +89,15 @@ class Runtime(AbstractRuntime):
 
     def stop(self) -> None:
         """Cancel the running task group, triggering orderly shutdown."""
-        if self._cancel_scope is not None:
-            self._cancel_scope.cancel()
-            logger.info("Runtime: stop requested")
-        else:
+        if self._cancel_scope is None:
             logger.warning("Runtime: stop() called but runtime is not running")
+            return
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(self._cancel_scope.cancel)
+        else:
+            self._cancel_scope.cancel()
+        logger.info("Runtime: stop requested")
 
     @property
     def running(self) -> bool:

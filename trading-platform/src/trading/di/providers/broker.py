@@ -7,8 +7,8 @@ from dishka import Provider, Scope, provide
 from trading.broker.base.broker import Broker
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.paper_broker import PaperBroker
-from trading.broker.zerodha_broker.kite_client.kite_client import KiteClient
-from trading.broker.zerodha_broker.zerodha import ZerodhaBroker
+from trading.broker.zerodha.broker import ZerodhaBroker
+from trading.broker.zerodha.kite_client import KiteClient
 from trading.config.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class BrokerProvider(Provider):
     @provide
     def broker(self, client: KiteClient, settings: Settings) -> Broker:
         client.set_access_token(settings.zerodha_access_token)
-        real_broker = ZerodhaBroker(client)
+        real_broker = ZerodhaBroker(client, order_timeout_secs=settings.order_timeout_secs)
         if settings.paper_trading:
             logger.info("BrokerProvider: paper trading mode enabled")
             return PaperBroker(real_broker)
@@ -37,6 +37,6 @@ class BrokerProvider(Provider):
 
     @provide
     def broker_stream(self, client: KiteClient) -> BrokerStream:
-        from trading.broker.zerodha_broker.zerodha_stream import ZerodhaStream
+        from trading.broker.zerodha.stream import ZerodhaStream
 
         return ZerodhaStream(client)
