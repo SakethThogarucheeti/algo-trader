@@ -30,3 +30,6 @@ uv.lock
 
 # Historical market data (fetched via uv run fetch-data)
 **/data/
+
+# Runtime logs (written by the trading process)
+**/logs/
