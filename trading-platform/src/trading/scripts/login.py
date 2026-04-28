@@ -69,7 +69,7 @@ _server_error: str | None = None
 class _CallbackHandler(BaseHTTPRequestHandler):
     """Handles the single redirect from Zerodha after login."""
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         global _request_token, _server_error
 
         parsed = urlparse(self.path)

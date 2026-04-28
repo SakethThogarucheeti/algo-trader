@@ -22,6 +22,9 @@ wheels/
 # Test session results
 **/session_results/
 
+# Hyperparameter grid search output
+**/grid_search_results.csv
+
 # Lock files
 uv.lock
 

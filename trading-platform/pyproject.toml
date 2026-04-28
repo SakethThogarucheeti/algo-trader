@@ -50,6 +50,9 @@ testpaths = ["tst"]
 build = "trading.ci:main"
 start = "trading.start:main"
 fetch-data = "trading.scripts.fetch_data:main"
+day-end-report = "trading.scripts.day_end_report:main"
+week-report = "trading.scripts.week_report:main"
+month-report = "trading.scripts.month_report:main"
 
 [tool.uv]
 package = true
@@ -70,6 +73,10 @@ select = [
 ]
 
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# _teardown is an intentional opt-in no-op hook in an ABC — not missing @abstractmethod
+"src/trading/engine/component.py" = ["B027"]
 
 [tool.ruff.format]
 quote-style = "double"

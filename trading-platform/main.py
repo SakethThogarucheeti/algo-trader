@@ -21,19 +21,40 @@ import logging
 import subprocess
 import sys
 from datetime import time
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from anyio import sleep_forever
 
 from trading.di.container import build_container
-from trading.engine.runtime import Runtime
+from trading.engine.runtime import AbstractRuntime
 from trading.engine.scheduler import Scheduler
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+_LOG_DIR = Path("logs")
+_LOG_DIR.mkdir(exist_ok=True)
+
+_fmt = logging.Formatter(
+    "%(asctime)s %(levelname)-8s %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Stream handler — live output to terminal, force UTF-8 on Windows
+_stream_handler = logging.StreamHandler(
+    open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
+)
+_stream_handler.setFormatter(_fmt)
+
+# Rotating file handler — 10 MB per file, keep 10 files (~100 MB max)
+_file_handler = RotatingFileHandler(
+    _LOG_DIR / "trading.log",
+    maxBytes=10 * 1024 * 1024,
+    backupCount=10,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(_fmt)
+
+logging.basicConfig(level=logging.INFO, handlers=[_stream_handler, _file_handler])
 logger = logging.getLogger(__name__)
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -70,7 +91,7 @@ async def _main() -> None:
     _run_migrations()
 
     async with build_container() as container:
-        runtime: Runtime = await container.get(Runtime)
+        runtime: AbstractRuntime = await container.get(AbstractRuntime)
         scheduler: Scheduler = await container.get(Scheduler)
 
         scheduler.start()
