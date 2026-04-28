@@ -10,10 +10,9 @@ from sqlalchemy import pool
 from alembic import context
 
 # Import models so Alembic autogenerate sees the full metadata.
-from trading.core.models import Base  # noqa: F401
+from trading.core.models import Base
 
 # Load .env from the project root (one level above the alembic/ directory).
-# Must run before _get_url() reads POSTGRES_URL from the environment.
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 config = context.config

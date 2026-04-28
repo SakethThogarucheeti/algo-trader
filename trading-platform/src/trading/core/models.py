@@ -112,6 +112,55 @@ class TickLog(Base):
     )
 
 
+class AlgoConfig(Base):
+    """
+    Static configuration for an algo, stored in Postgres.
+
+    ``params`` is a free-form JSON dict of strategy-specific hyperparameters
+    (e.g. ``{"fast": 9, "slow": 21}``). Seeded from Settings on startup if the
+    row does not already exist; manual DB edits survive restarts.
+    """
+
+    __tablename__ = "algo_configs"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String)
+    warmup_candles: Mapped[int] = mapped_column(default=30)
+    candle_intervals: Mapped[str] = mapped_column(String)  # JSON-encoded list
+    equity: Mapped[float]
+    enabled: Mapped[bool] = mapped_column(default=True)
+    params: Mapped[str] = mapped_column(String, default="{}")  # JSON-encoded dict
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    state: Mapped[AlgoState | None] = relationship(
+        "AlgoState", back_populates="config", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class AlgoState(Base):
+    """
+    Live runtime state for an algo, written by the bot after each candle.
+
+    ``state`` is a free-form JSON dict — each algo/strategy writes whatever
+    values are meaningful (bars_seen, warmup_complete, last_signal_at, current
+    indicator values, etc.). The dashboard renders all keys as a live KV table.
+    """
+
+    __tablename__ = "algo_state"
+
+    name: Mapped[str] = mapped_column(
+        String, ForeignKey("algo_configs.name"), primary_key=True
+    )
+    state: Mapped[str] = mapped_column(String, default="{}")  # JSON-encoded dict
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    config: Mapped[AlgoConfig] = relationship("AlgoConfig", back_populates="state")
+
+
 class DecisionLog(Base):
     """
     Audit record for every decision made in response to a tick.
