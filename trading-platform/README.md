@@ -2,7 +2,7 @@
 
 An event-driven intraday trading platform for Indian equity markets, built on Zerodha/Kite.
 
-**Architecture:** Redis pub/sub messaging · PostgreSQL persistence · APScheduler market-hours automation · Dishka DI · async-first (anyio)
+**Architecture:** Direct in-process pipeline · PostgreSQL persistence · APScheduler market-hours automation · Dishka DI · async-first (anyio)
 
 ---
 
@@ -27,7 +27,7 @@ An event-driven intraday trading platform for Indian equity markets, built on Ze
 | -------------------------------- | ------- | ----------------------------------- |
 | Python                           | 3.13+   | managed by uv via `.python-version` |
 | [uv](https://docs.astral.sh/uv/) | latest  | dependency manager and runner       |
-| Docker + Docker Compose          | v2+     | for Postgres and Redis              |
+| Docker + Docker Compose          | v2+     | for Postgres                        |
 
 ---
 
@@ -52,7 +52,6 @@ ZERODHA_ACCESS_TOKEN=          # leave empty; populated by the login script each
 
 # Infrastructure (match docker-compose defaults)
 POSTGRES_URL=postgresql+asyncpg://trading:trading@localhost/trading
-REDIS_URL=redis://localhost:6379
 
 # Risk controls (optional — safe defaults shown)
 MAX_DAILY_LOSS_PCT=2.0         # halt trading if daily PnL drops this % of equity
@@ -68,7 +67,7 @@ TELEGRAM_CHAT_ID=
 # Dashboard (optional)
 DASHBOARD_ENABLED=true
 DASHBOARD_HOST=127.0.0.1
-DASHBOARD_PORT=8080
+DASHBOARD_PORT=8081
 
 # Capital allocated to the default algo (used when ALGOS is not set)
 DEFAULT_EQUITY=10000
@@ -101,15 +100,15 @@ uv run start
 
 This single command:
 
-1. Starts Postgres and Redis via Docker Compose
-2. Waits until both are healthy
+1. Starts Postgres via Docker Compose
+2. Waits until healthy
 3. Launches the trading bot
 
 ### Manual steps (if you prefer)
 
 ```bash
 # 1. Start infrastructure
-docker compose up postgres redis -d
+docker compose up postgres -d
 
 # 2. Wait until healthy, then start the bot
 uv run python main.py
@@ -123,7 +122,7 @@ The bot will:
 4. Fire `Runtime.stop` at **15:30 IST** each weekday
 5. If started during market hours, begin trading immediately
 
-Stop with `Ctrl+C` — shuts down cleanly (scheduler stopped, DB/Redis connections closed).
+Stop with `Ctrl+C` — shuts down cleanly (scheduler stopped, DB connections closed).
 
 ### Running everything in Docker (bot + infra)
 
@@ -139,8 +138,8 @@ When `DASHBOARD_ENABLED=true`, a live portfolio dashboard is available.
 
 | How you're running               | URL                     |
 | -------------------------------- | ----------------------- |
-| `uv run python main.py` directly | `http://127.0.0.1:8080` |
-| `docker compose up`              | `http://localhost:8080` |
+| `uv run python main.py` directly | `http://127.0.0.1:8081` |
+| `docker compose up`              | `http://localhost:8081` |
 
 ---
 
@@ -150,7 +149,7 @@ All three test suites use `pytest` via `uv run`. Run them from inside their resp
 
 ### Unit tests
 
-Fast, no external services needed (uses `fakeredis` and `aiosqlite`).
+Fast, no external services needed (uses `aiosqlite`).
 
 ```bash
 cd trading-platform
@@ -159,7 +158,7 @@ uv run pytest tst/
 
 ### Strategy tests (backtesting, Monte Carlo, walk-forward)
 
-Requires Docker (uses `testcontainers` to spin up Postgres and Redis).
+Requires Docker (uses `testcontainers` to spin up Postgres).
 
 ```bash
 cd trading-platform/strategy-testing
@@ -193,81 +192,113 @@ uv run pytest system-testing/
 
 ## System Architecture
 
-The system is fully event-driven. Components never call each other directly — they publish and subscribe to named channels on the message bus. This means every layer is independently replaceable and testable.
+Each incoming WebSocket tick flows through five registry stages in a flat, direct function call — no message broker, no indirection. `pipeline.py` defines the entire flow top-to-bottom and can be read as a single document.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                            LIVE TRADING                                 │
 │                                                                         │
 │  Zerodha WebSocket                                                      │
-│       │                                                                 │
+│       │  raw tick dict                                                  │
 │       ▼                                                                 │
-│  ┌──────────────┐    tick:{token}   ┌───────────────────┐             │
-│  │ KiteIngestor │ ────────────────► │ CandleAggregator  │             │
-│  │  (Component) │                   │    (Component)    │             │
-│  └──────────────┘                   └─────────┬─────────┘             │
-│   • validates tick                            │ candle:{symbol}:{interval}
-│   • writes TickLog                            ▼                        │
-│   • updates PriceStore              ┌───────────────────┐             │
-│   • circuit breaker                 │    AlgoRunner     │             │
-│                                     │   (Component)     │             │
-│                                     └─────────┬─────────┘             │
-│                                               │ • updates FeatureEngine│
-│                                               │ • calls strategy       │
-│                                               │ signals:{algo_name}    │
-│                                               ▼                        │
-│                                     ┌───────────────────┐             │
-│                                     │  RiskController   │             │
-│                                     │   (Component)     │             │
-│                                     └─────────┬─────────┘             │
-│                                               │ validated_orders:{algo}│
-│                                               ▼                        │
-│                                     ┌───────────────────┐             │
-│                                     │  OrderExecutor    │             │
-│                                     │   (Component)     │             │
-│                                     └─────────┬─────────┘             │
-│                                               │                        │
-│                                      ┌────────┴────────┐              │
-│                                      │  Zerodha REST   │              │
-│                                      │  (place_order)  │              │
-│                                      └────────┬────────┘              │
-│                                               │ postback webhook       │
-│                                               ▼                        │
-│                                     ┌───────────────────┐             │
-│                                     │   Fill Handler    │             │
-│                                     │ (update position) │             │
-│                                     └───────────────────┘             │
+│  ┌─────────────────┐                                                   │
+│  │  KiteIngestor   │  engine/kite_ingestor.py                          │
+│  │   (Component)   │  • bridges WS thread → async loop                 │
+│  └────────┬────────┘  • calls TickRegistry.handle(raw)                 │
+│           │ TickEvent  • updates PriceStore (paper trading)             │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                   │
+│  │  TickRegistry   │  registry/tick.py                                 │
+│  │                 │  • validates tick, persists tick_log               │
+│  └────────┬────────┘  • owns CircuitBreaker                            │
+│           │ TickEvent                                                   │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                   │
+│  │ CandleRegistry  │  registry/candle.py                               │
+│  │                 │  • aggregates ticks into OHLCV bars               │
+│  └────────┬────────┘  • returns CandleEvent when bar closes            │
+│           │ CandleEvent                                                 │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                   │
+│  │  AlgoRegistry   │  registry/algo.py                                 │
+│  │                 │  • feeds candle into FeatureEngine                 │
+│  └────────┬────────┘  • calls strategy.on_candle() → Signal            │
+│           │ SignalEvent                                                 │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                   │
+│  │  RiskRegistry   │  registry/risk.py                                 │
+│  │                 │  • 5-step rejection pipeline                       │
+│  └────────┬────────┘  • sizes position, checks circuit breaker         │
+│           │ ValidatedOrderEvent                                         │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                   │
+│  │  ExecRegistry   │  registry/exec.py                                 │
+│  │                 │  • places order via broker                         │
+│  └────────┬────────┘  • simulates fill (paper) or awaits postback      │
+│           │                                                             │
+│  ┌────────┴────────┐                                                   │
+│  │  Zerodha REST   │                                                   │
+│  │  (place_order)  │                                                   │
+│  └─────────────────┘                                                   │
 │                                                                         │
-│  All components share:  MessageBus (Redis)  ·  Repository (Postgres)  │
+│  All registries share:  Repository (Postgres)                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Pipeline wiring (`pipeline.py`)
+
+`pipeline.py` at the project root is the readable wiring document. It constructs all five registries top-to-bottom and defines `on_tick()` — the single async function called once per incoming WebSocket tick:
+
+```python
+async def on_tick(raw: dict) -> None:
+    tick = await tick_reg.handle(raw)
+    if tick is None:
+        return
+
+    candle = await candle_reg.handle(tick)
+    if candle is None:
+        return
+
+    signals = await algo_reg.handle(candle)
+    for signal in signals:
+        order = await risk_reg.handle(signal)
+        if order is None:
+            continue
+        await exec_reg.handle(order)
+```
+
+To change strategy: edit `instrument_strategy_map` in `pipeline.py`.
+To change risk limits: edit `RiskConfig` in `pipeline.py`.
+To switch paper/live: change `exec_id` in `TickConfig`.
+
 ### Component Overview
 
-| Component                | File                    | What it does                                                                                                                                                                                                                                       |
-| ------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KiteIngestor`           | `data/realtime.py`      | Bridges the Zerodha WebSocket to the async event loop. Writes every tick to `tick_logs`, assigns a `tick_log_id`, and publishes a `TickEvent`. Sets a circuit-breaker flag if disconnected for more than 30 seconds.                               |
-| `CandleAggregator`       | `data/candles.py`       | Subscribes to `tick:{token}` for every instrument. Maintains a partial bar per (symbol, interval) and emits a `CandleEvent` when the bar window closes. On startup, fetches historical candles from the broker to warm up the feature engine.      |
-| `AlgoRunner`             | `engine/algo_runner.py` | One per configured algo. Subscribes to `candle:{symbol}:{interval}`, feeds each candle to the `FeatureEngine` to compute indicators, then calls `strategy.on_candle()`. If the strategy returns a signal it is published to `signals:{algo_name}`. |
-| `TechnicalFeatureEngine` | `features/technical.py` | Maintains a rolling Polars DataFrame per (symbol, interval). On each `update()` call it appends the new bar and recomputes EMA, RSI, ATR, and session VWAP using pure Polars expressions. No TA-Lib dependency.                                    |
-| `Strategy`               | `strategy/base.py`      | Abstract base. `on_candle(symbol, instrument_type, df)` receives the indicator-enriched DataFrame and returns a `Signal` or `None`. Stateless — no DB or bus access.                                                                               |
-| `RiskController`         | `risk/controller.py`    | Subscribes to `signals:{algo_name}`. Runs a 5-step rejection pipeline. Accepted signals become `ValidatedOrderEvent` and are published to `validated_orders:{algo_name}`.                                                                          |
-| `OrderExecutor`          | `execution/executor.py` | Subscribes to `validated_orders:{algo_name}`. Delegates to `ExecutionEngine.execute()` which persists the order, calls the broker, and handles fills.                                                                                              |
-| `HeartbeatMonitor`       | `engine/heartbeat.py`   | Writes its own heartbeat to Postgres every N seconds and checks all other modules. Fires a Telegram alert when any module goes stale.                                                                                                              |
-| `Runtime`                | `engine/runtime.py`     | Supervises all components with ordered startup (each component's `_setup()` completes before the next one starts) and reverse-order shutdown.                                                                                                      |
-| `Scheduler`              | `engine/scheduler.py`   | Uses APScheduler to fire `Runtime.start` at 09:15 IST and `Runtime.stop` at 15:30 IST on weekdays.                                                                                                                                                 |
+| Component              | File                            | What it does                                                                                                     |
+| ---------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `KiteIngestor`         | `engine/kite_ingestor.py`       | Bridges the Zerodha WebSocket to the async event loop. Calls `TickRegistry.handle()` for each tick. Manages the circuit-breaker timer on disconnect. |
+| `CandleAggregator`     | `engine/candle_aggregator.py`   | Lifecycle wrapper: runs `CandleRegistry.warmup()` on startup (fetches historical candles), then sleeps forever while live ticks flow in. |
+| `AlgoRunner`           | `engine/algo_runner.py`         | Lifecycle wrapper around `AlgoRegistry`. Ready at construction time; sleeps forever while candles are fed via `on_candle()`. |
+| `TechnicalFeatureEngine` | `features/technical.py`       | Maintains a rolling Polars DataFrame per (symbol, interval). Computes EMA, RSI, ATR, and session VWAP on each `update()` call. |
+| `Strategy`             | `strategy/base.py`              | Abstract base. `on_candle(symbol, instrument_type, df)` receives the indicator-enriched DataFrame and returns a `Signal` or `None`. |
+| `RiskController`       | `risk/base.py`                  | Lifecycle wrapper around `RiskRegistry`. |
+| `OrderExecutor`        | `execution/executor.py`         | Lifecycle wrapper around `ExecRegistry`. |
+| `HeartbeatMonitor`     | `engine/heartbeat.py`           | Writes its own heartbeat to Postgres every N seconds and checks all other modules. Fires a Telegram alert when any module goes stale. |
+| `Runtime`              | `engine/runtime.py`             | Supervises all components with ordered startup (each component's `_setup()` completes before the next starts) and reverse-order shutdown. |
+| `Scheduler`            | `engine/scheduler.py`           | Uses APScheduler to fire `Runtime.start` at 09:15 IST and `Runtime.stop` at 15:30 IST on weekdays. |
 
-### Message Bus Channels
+### Registry Overview
 
-| Channel                        | Event type             | Published by       | Consumed by                   |
-| ------------------------------ | ---------------------- | ------------------ | ----------------------------- |
-| `tick:{instrument_token}`      | `TickEvent`            | `KiteIngestor`     | `CandleAggregator`            |
-| `candle:{symbol}:{interval}`   | `CandleEvent`          | `CandleAggregator` | `AlgoRunner`                  |
-| `signals:{algo_name}`          | `SignalEvent`          | `AlgoRunner`       | `RiskController`              |
-| `validated_orders:{algo_name}` | `ValidatedOrderEvent`  | `RiskController`   | `OrderExecutor`               |
-| `orders:{algo_name}`           | `OrderEvent`           | `OrderExecutor`    | (audit / monitoring)          |
-| `fills:{algo_name}`            | `FillEvent`            | `OrderExecutor`    | (equity tracking, monitoring) |
-| `testing:progress`             | `SessionProgressEvent` | `BacktestSession`  | (test harness)                |
+Each registry stage owns its config (a `@dataclass`) and its `handle()` method. They are stateful processors, not message-bus listeners.
+
+| Registry         | File                  | Input → Output                                 |
+| ---------------- | --------------------- | ---------------------------------------------- |
+| `TickRegistry`   | `registry/tick.py`    | `dict` → `TickEvent \| None`                   |
+| `CandleRegistry` | `registry/candle.py`  | `TickEvent` → `CandleEvent \| None`            |
+| `AlgoRegistry`   | `registry/algo.py`    | `CandleEvent` → `list[SignalEvent]`            |
+| `RiskRegistry`   | `registry/risk.py`    | `SignalEvent` → `ValidatedOrderEvent \| None`  |
+| `ExecRegistry`   | `registry/exec.py`    | `ValidatedOrderEvent` → `None`                 |
+
+`TickRegistry` also owns the `CircuitBreaker`. `RiskRegistry` receives a reference to the same instance — no copies, no flags, no bus channels.
 
 ### Risk Pipeline
 
@@ -299,15 +330,15 @@ qty = floor( (equity × risk_per_trade_pct / 100) / stop_distance )
 
 Every event that flows through the pipeline leaves a trace in Postgres:
 
-| Table           | Written by                                         | Purpose                                         |
-| --------------- | -------------------------------------------------- | ----------------------------------------------- |
-| `tick_logs`     | `KiteIngestor`                                     | Immutable record of every raw market tick       |
-| `decision_logs` | `CandleAggregator`, `AlgoRunner`, `RiskController` | Full audit trail — one row per pipeline step    |
-| `signals`       | `RiskController`                                   | Accepted signal parameters                      |
-| `orders`        | `OrderExecutor`                                    | Order lifecycle (PENDING → PLACED → FILLED)     |
-| `positions`     | `OrderExecutor`                                    | Live net position per (symbol, instrument_type) |
-| `heartbeats`    | `HeartbeatMonitor`                                 | Module liveness timestamps                      |
-| `audit_logs`    | `RiskController`, `OrderExecutor`                  | Free-form operational events                    |
+| Table           | Written by                                        | Purpose                                         |
+| --------------- | ------------------------------------------------- | ----------------------------------------------- |
+| `tick_logs`     | `TickRegistry`                                    | Immutable record of every raw market tick       |
+| `decision_logs` | `CandleRegistry`, `AlgoRegistry`, `RiskRegistry`  | Full audit trail — one row per pipeline step    |
+| `signals`       | `RiskRegistry`                                    | Accepted signal parameters                      |
+| `orders`        | `ExecRegistry`                                    | Order lifecycle (PENDING → PLACED → FILLED)     |
+| `positions`     | `ExecRegistry`                                    | Live net position per (symbol, instrument_type) |
+| `heartbeats`    | `HeartbeatMonitor`                                | Module liveness timestamps                      |
+| `audit_logs`    | `RiskRegistry`, `ExecRegistry`                    | Free-form operational events                    |
 
 Every event carries a `tick_log_id` that propagates from the original tick all the way to the fill. A single query on `decision_logs WHERE tick_log_id = X` reconstructs the full causal chain for any trade.
 
@@ -325,25 +356,24 @@ The `Broker` and `BrokerStream` ABCs allow the execution layer to be swapped wit
 
 The system uses [Dishka](https://github.com/reagento/dishka) for DI. Everything is assembled in three providers:
 
-- **`InfrastructureProvider`** — singletons: Settings, AsyncEngine, Redis, `RedisMessageBus`, `Repository`, `PriceStore`
+- **`InfrastructureProvider`** — singletons: Settings, AsyncEngine, `Repository`, `PriceStore`
 - **`BrokerProvider`** — `ZerodhaBroker` (or `PaperBroker`), `ZerodhaStream`, `KiteClient`
 - **`ComponentProvider`** — one `AlgoRunner` + `RiskController` + `OrderExecutor` per algo config; shared `KiteIngestor`, `CandleAggregator`, `HeartbeatMonitor`, `Runtime`, `Scheduler`
 
-Every component depends only on abstract interfaces (`MessageBus`, `AbstractRepository`, `AbstractPriceStore`, `AbstractRuntime`). The concrete implementations are only named at the composition root inside the providers.
+Every component depends only on abstract interfaces (`AbstractRepository`, `AbstractPriceStore`, `AbstractRuntime`). The concrete implementations are only named at the composition root inside the providers.
 
 ### Backtesting
 
-The backtest reuses every live component — `AlgoRunner`, `RiskController`, `DirectExecutionEngine` — with only the data source and broker swapped:
+The backtest reuses every live registry — `AlgoRegistry`, `RiskRegistry`, `ExecRegistry` — with only the data source and broker swapped:
 
 | Live                                  | Backtest                                      |
 | ------------------------------------- | --------------------------------------------- |
 | `ZerodhaStream` WebSocket             | `CandlePlayer` replaying Parquet files        |
 | `ZerodhaBroker.place_order()`         | `SlippageFillSimulator.place_order()`         |
-| `RedisMessageBus` (Redis round-trips) | `LocalMessageBus` (in-process, zero overhead) |
 | `SystemClock` (wall time)             | `SimulatedClock` (bar timestamps)             |
 | Real Postgres schema                  | Isolated per-run Postgres schema              |
 
-Because the same strategy and risk code runs in both modes, backtest results directly reflect live behaviour.
+Because the same registry and strategy code runs in both modes, backtest results directly reflect live behaviour.
 
 ---
 
@@ -360,88 +390,86 @@ This traces a single INFY tick from the Zerodha WebSocket all the way to a fille
 ```
 Zerodha WebSocket thread
   └── ZerodhaStream._on_ticks(raw_ticks)
-        └── loop.call_soon_threadsafe(_handle_tick, raw)
+        └── loop.run_coroutine_threadsafe(_handle_tick, raw)
 ```
 
-`KiteIngestor._handle_tick()` runs on the async event loop:
+`KiteIngestor._handle_tick()` runs on the async event loop and calls `TickRegistry.handle(raw)`:
 
 ```python
-# data/realtime.py — KiteIngestor._handle_tick()
-async with get_session(self._session_factory) as session:
-    tick_log_id = await self._repo.log_tick(session, event, symbol)
-    # flush() assigns the DB row id without waiting for a full commit
-```
+# registry/tick.py — TickRegistry.handle()
+tick_log_id = await self._repo.log_tick(session, raw_event, symbol)
 
-A `TickLog` row is written (`instrument_token=12345, last_price=1523.0, received_at=now`).
-The auto-incremented `id` (say, **42**) is returned immediately.
-
-```python
-event = TickEvent(
+return TickEvent(
     instrument_token=12345, last_price=1523.0, volume=8400,
-    timestamp=now, tick_log_id=42          # ← propagated from here
+    timestamp=now, tick_log_id=42          # ← assigned by DB
 )
-await self._bus.publish("tick:12345", event)
-self._price_store.update("INFY", 1523.0)  # keeps PriceStore current
+```
+
+Back in `KiteIngestor`:
+
+```python
+# engine/kite_ingestor.py — KiteIngestor._handle_tick()
+tick = await self._tick_registry.handle(raw)
+if self._price_store is not None:
+    self._price_store.update("INFY", tick.last_price)  # paper trading fill simulation
 ```
 
 **State after step 1:**
 
 - `tick_logs` row id=42
 - `PriceStore["INFY"] = 1523.0`
-- `TickEvent(tick_log_id=42)` on Redis channel `tick:12345`
+- `TickEvent(tick_log_id=42)` returned to `on_tick()`
 
 ---
 
 ### Step 2 — Candle bar closes
 
-`CandleAggregator` is subscribed to `tick:12345`. Its handler fires:
+`on_tick()` passes the `TickEvent` to `CandleRegistry.handle(tick)`:
 
 ```python
-# data/candles.py — CandleAggregator._process_tick()
-bar_open = _bar_open_time(event.timestamp, interval="15min")
-# bar_open = 09:15:00 — same bar as the previous tick
+# registry/candle.py — CandleRegistry.handle()
+bar_open = _bar_open_time(tick.timestamp, interval="1min")
 
-partial = self._bars[("INFY", "15min")]
+# Bar not yet closed — update partial bar in memory
 partial.close = 1523.0
 partial.high = max(partial.high, 1523.0)
 partial.volume += 8400
 ```
 
-The _next_ tick (09:30:00) will have a different `bar_open`, which triggers:
+When a new bar opens (different `bar_open`), the previous bar is closed and returned:
 
 ```python
-# Emit the completed bar
 candle = CandleEvent(
-    symbol="INFY", interval="15min",
+    symbol="INFY", interval="1min",
     open=1498.0, high=1525.0, low=1495.0, close=1523.0, volume=142000,
-    timestamp=bar_open,
+    timestamp=bar_close_time,
     tick_log_id=42      # ← the tick that closed the bar
 )
-await self._bus.publish("candle:INFY:15min", candle)
-await self._repo.log_decision(session, step="CANDLE_EMITTED", symbol="INFY",
-                               tick_log_id=42, context={...})
+# fire-and-forget: log_candle() writes decision_logs row
+asyncio.get_running_loop().create_task(self._log_candle(candle))
+return candle
 ```
 
 **State after step 2:**
 
 - `decision_logs` row: `step=CANDLE_EMITTED, tick_log_id=42`
-- `CandleEvent(tick_log_id=42)` on Redis channel `candle:INFY:15min`
+- `CandleEvent(tick_log_id=42)` returned to `on_tick()`
 
 ---
 
 ### Step 3 — Feature engine updates, strategy fires
 
-`AlgoRunner` is subscribed to `candle:INFY:15min`. Its handler fires:
+`on_tick()` passes the `CandleEvent` to `AlgoRegistry.handle(candle)`:
 
 ```python
-# engine/algo_runner.py — AlgoRunner._on_candle()
-df = self._feature_engine.update(event)
-# df is now a 200-row Polars DataFrame with columns:
+# registry/algo.py — AlgoRegistry.handle()
+df = instance.feature_engine.update(candle)
+# df is now a rolling Polars DataFrame with columns:
 #   timestamp, open, high, low, close, volume,
 #   ema_9, ema_21, rsi_14, atr_14, vwap
 ```
 
-`TechnicalFeatureEngine.update()` appends the new bar and recomputes all indicators in two Polars passes (session ID for VWAP grouping, then all indicator expressions). The last two rows of the result look like:
+`TechnicalFeatureEngine.update()` appends the new bar and recomputes all indicators in two Polars passes. The last two rows look like:
 
 ```
 timestamp   close   ema_9    ema_21   atr_14
@@ -452,7 +480,7 @@ timestamp   close   ema_9    ema_21   atr_14
 The strategy sees the crossover:
 
 ```python
-# strategy/examples/ema_crossover.py — EmaCrossoverStrategy.on_candle()
+# strategy/ema_crossover.py — EmaCrossoverStrategy.on_candle()
 prev_fast, cur_fast = 1495.2, 1502.1
 prev_slow, cur_slow = 1501.4, 1501.9
 
@@ -465,7 +493,7 @@ if prev_fast < prev_slow and cur_fast > cur_slow:
     )
 ```
 
-`AlgoRunner` converts the `Signal` to a `SignalEvent` and publishes it:
+`AlgoRegistry` wraps the `Signal` in a `SignalEvent`:
 
 ```python
 signal_event = SignalEvent(
@@ -473,115 +501,82 @@ signal_event = SignalEvent(
     tick_log_id=42,    # ← still propagating
     signal_id=UUID("a1b2...")
 )
-await self._bus.publish("signals:momentum", signal_event)
-await self._repo.log_decision(session, step="SIGNAL_GENERATED", ...)
+asyncio.get_running_loop().create_task(self._log_signal(signal_event, ...))
+return [signal_event]
 ```
 
 **State after step 3:**
 
 - `decision_logs` row: `step=SIGNAL_GENERATED, tick_log_id=42, signal_id=a1b2...`
-- `SignalEvent(tick_log_id=42)` on Redis channel `signals:momentum`
+- `[SignalEvent(tick_log_id=42)]` returned to `on_tick()`
 
 ---
 
-### Step 4 — Risk controller validates the signal
+### Step 4 — Risk registry validates the signal
 
-`RiskController` is subscribed to `signals:momentum`. It runs five checks:
+`on_tick()` passes each signal to `RiskRegistry.handle(signal)`:
 
 ```python
-# risk/controller.py — DefaultRiskController._evaluate_signal()
+# registry/risk.py — RiskRegistry.handle()
 
 # 1. Time check — 09:15 IST, well before the 15:30 cutoff ✓
-# 2. Circuit breaker — flag not set ✓
+# 2. Circuit breaker — tick_reg.circuit.is_open() == False ✓
 # 3. Daily loss limit — paper_trading=False, today's PnL = 0, limit = 2,000 ✓
 # 4. Position check — no existing INFY position ✓
 # 5. Quantity sizing:
 qty = floor((100_000 × 1.0 / 100) / 12.9) = floor(775.2) = 775
-# qty = 775, lot_size=1 (equity) → 775 ✓
 ```
 
-Signal accepted. A `ValidatedOrderEvent` is published:
+Signal accepted:
 
 ```python
 await self._repo.save_signal(session, signal_event)   # persist Signal row
-validated = ValidatedOrderEvent(
+return ValidatedOrderEvent(
     signal_id=UUID("a1b2..."), symbol="INFY",
     side=BUY, quantity=775, order_type=MARKET,
     tick_log_id=42
 )
-await self._bus.publish("validated_orders:momentum", validated)
-await self._repo.log_decision(session, step="SIGNAL_ACCEPTED", ...)
 ```
 
 **State after step 4:**
 
 - `signals` row: `id=a1b2..., symbol=INFY, side=BUY, stop_distance=12.9`
 - `decision_logs` row: `step=SIGNAL_ACCEPTED, tick_log_id=42`
-- `ValidatedOrderEvent` on Redis channel `validated_orders:momentum`
+- `ValidatedOrderEvent` returned to `on_tick()`
 
 ---
 
-### Step 5 — Order executor places the order
+### Step 5 — Execution registry places the order
 
-`OrderExecutor` is subscribed to `validated_orders:momentum`. It delegates to `DirectExecutionEngine.execute()`:
+`on_tick()` passes the `ValidatedOrderEvent` to `ExecRegistry.handle(order)`:
 
 ```python
-# execution/executor.py — DirectExecutionEngine.execute()
+# registry/exec.py — ExecRegistry.handle()
 
 # 1. Idempotency: no existing Order for signal_id a1b2... → proceed
 
-# 2. Persist PENDING order (before broker call, so no ghost orders)
-order = Order(id=UUID("c3d4..."), kite_order_id=None,
-              signal_id=UUID("a1b2..."), status=PENDING, qty=775)
+# 2. Persist PENDING order (before broker call)
+order = Order(id=UUID("c3d4..."), signal_id=UUID("a1b2..."),
+              status=PENDING, qty=775)
 await self._repo.save_order(session, order)
 
-# 3. Register fill-tracking callback synchronously (before any FillEvent can arrive)
-self._on_order_placed("KITE_ORDER_789", "INFY", Side.BUY)
-
-# 4. Place the order (async REST call to Zerodha)
+# 3. Place the order (async REST call to Zerodha)
 kite_order_id = await self._broker.place_order(
     symbol="INFY", side=BUY, qty=775, order_type=MARKET
 )
 # kite_order_id = "KITE_ORDER_789"
 
-# 5. Update order status to PLACED
-await self._repo.update_order_status(session, "KITE_ORDER_789", PLACED)
-
-# 6. Publish OrderEvent
-await self._bus.publish("orders:momentum", OrderEvent(...))
+# 4. Update order status to PLACED
+row.kite_order_id = "KITE_ORDER_789"
+row.status = PLACED
 ```
 
-**State after step 5:**
-
-- `orders` row: `kite_order_id=KITE_ORDER_789, status=PLACED, qty=775`
-
----
-
-### Step 6 — Fill arrives (Zerodha postback webhook)
-
-Zerodha sends a fill notification via HTTP postback. The webhook calls `handle_fill()`:
+For paper trading (`exec_id="paper"`), a fill is simulated immediately from `PriceStore`:
 
 ```python
-# execution/executor.py — DirectExecutionEngine.handle_fill()
-async with self._session_factory() as session:
-    async with session.begin():
-        # Atomic: order update + position update in a single transaction
-        await self._repo.update_order_status(
-            session, "KITE_ORDER_789", FILLED, avg_price=1523.50
-        )
-        await self._repo.update_position(
-            session, fill=fill_event, side=BUY,
-            symbol="INFY", instrument_type="EQUITY"
-        )
-        # Position upsert with SELECT FOR UPDATE (safe under concurrent fills)
-        # net_qty: 0 + 775 = 775, avg_price: 1523.50
-
-fill_event = FillEvent(
-    kite_order_id="KITE_ORDER_789",
-    avg_price=1523.50, filled_qty=775,
-    tick_log_id=42
-)
-await self._bus.publish("fills:momentum", fill_event)
+# Paper only: simulate fill at last known price
+fill_price = self._price_store.get("INFY")   # 1523.0
+await self._handle_fill(kite_order_id="KITE_ORDER_789", avg_price=1523.0, ...)
 ```
 
 **Final state in Postgres:**
@@ -591,8 +586,8 @@ await self._bus.publish("fills:momentum", fill_event)
 | `tick_logs`     | id=42, symbol=INFY, last_price=1523.0                                  |
 | `decision_logs` | CANDLE_EMITTED, SIGNAL_GENERATED, SIGNAL_ACCEPTED — all tick_log_id=42 |
 | `signals`       | id=a1b2..., side=BUY, stop_distance=12.9                               |
-| `orders`        | id=c3d4..., status=FILLED, avg_price=1523.50, qty=775                  |
-| `positions`     | symbol=INFY, net_qty=775, avg_price=1523.50                            |
+| `orders`        | id=c3d4..., status=FILLED, avg_price=1523.0, qty=775                   |
+| `positions`     | symbol=INFY, net_qty=775, avg_price=1523.0                             |
 
 To reconstruct the full decision chain for this trade:
 
@@ -609,7 +604,8 @@ ORDER BY created_at;
 
 ```
 trading-platform/
-├── main.py                              # entry point
+├── main.py                              # process entry point (scheduler, DI, migrations)
+├── pipeline.py                          # data flow wiring — read this to understand the system
 ├── src/trading/
 │   ├── config/
 │   │   ├── settings.py                  # all config via pydantic-settings + .env
@@ -617,41 +613,48 @@ trading-platform/
 │   ├── core/
 │   │   ├── models.py                    # SQLAlchemy ORM models
 │   │   ├── schemas.py                   # Pydantic event models (TickEvent → FillEvent)
-│   │   ├── messaging.py                 # MessageBus ABC + RedisMessageBus
+│   │   ├── messaging.py                 # AbstractRegistry ABC
 │   │   ├── database.py                  # engine factory, session helpers
 │   │   └── clock.py                     # Clock ABC, SystemClock, SimulatedClock
 │   ├── broker/
 │   │   ├── base/broker.py               # Broker ABC
 │   │   ├── base/broker_stream.py        # BrokerStream ABC
-│   │   ├── zerodha_broker/              # ZerodhaBroker + ZerodhaStream (live)
+│   │   ├── zerodha/                     # Zerodha live implementation
+│   │   │   ├── broker.py                # ZerodhaBroker (REST)
+│   │   │   ├── stream.py                # ZerodhaStream (WebSocket)
+│   │   │   ├── kite_client.py           # KiteConnect wrapper
+│   │   │   └── models.py                # TypedDicts for Kite API responses
 │   │   └── paper_broker.py              # PaperBroker + AbstractPriceStore + PriceStore
-│   ├── data/
-│   │   ├── realtime.py                  # KiteIngestor — WebSocket → TickEvent
-│   │   └── candles.py                   # CandleAggregator — TickEvent → CandleEvent
+│   ├── registry/                        # Pipeline stages — each owns its config + handle()
+│   │   ├── tick.py                      # TickConfig + TickRegistry + CircuitBreaker
+│   │   ├── candle.py                    # CandleConfig + CandleRegistry
+│   │   ├── algo.py                      # AlgoConfig + AlgoRegistry
+│   │   ├── risk.py                      # RiskConfig + RiskRegistry
+│   │   └── exec.py                      # ExecConfig + ExecRegistry
+│   ├── engine/                          # Async runtime + component lifecycle wrappers
+│   │   ├── component.py                 # Component ABC (CREATED→RUNNING→STOPPED)
+│   │   ├── runtime.py                   # AbstractRuntime + Runtime (ordered lifecycle)
+│   │   ├── kite_ingestor.py             # KiteIngestor — WS → TickRegistry
+│   │   ├── candle_aggregator.py         # CandleAggregator — warmup + sleep
+│   │   ├── algo_runner.py               # AlgoRunner — lifecycle wrapper
+│   │   ├── scheduler.py                 # APScheduler market-hours integration
+│   │   └── heartbeat.py                 # HeartbeatMonitor + Telegram alerts
 │   ├── features/
 │   │   ├── base.py                      # FeatureEngine ABC
 │   │   └── technical.py                 # TechnicalFeatureEngine (EMA, RSI, ATR, VWAP)
 │   ├── strategy/
 │   │   ├── base.py                      # Strategy ABC + Signal dataclass
-│   │   └── examples/
-│   │       ├── ema_crossover.py         # EMA crossover strategy
-│   │       ├── rsi_mean_reversion.py    # RSI mean-reversion strategy
-│   │       ├── vwap_reversion.py        # VWAP reversion strategy
-│   │       └── opening_range_breakout.py
+│   │   ├── ema_crossover.py             # EMA crossover strategy
+│   │   ├── rsi_mean_reversion.py        # RSI mean-reversion strategy
+│   │   ├── vwap_reversion.py            # VWAP reversion strategy
+│   │   └── opening_range_breakout.py    # Opening range breakout strategy
 │   ├── risk/
-│   │   ├── base.py                      # RiskController ABC
-│   │   ├── controller.py                # DefaultRiskController (5-step pipeline)
+│   │   ├── base.py                      # RiskController lifecycle wrapper
 │   │   └── sizer.py                     # ATR-based position sizer
 │   ├── execution/
 │   │   ├── base.py                      # ExecutionEngine ABC
-│   │   ├── executor.py                  # DirectExecutionEngine + OrderExecutor
+│   │   ├── executor.py                  # OrderExecutor lifecycle wrapper
 │   │   └── idempotency.py               # signal_id duplicate detection
-│   ├── engine/
-│   │   ├── component.py                 # Component ABC (CREATED→RUNNING→STOPPED)
-│   │   ├── runtime.py                   # AbstractRuntime + Runtime (ordered lifecycle)
-│   │   ├── algo_runner.py               # AlgoRunner — candle → features → strategy → signal
-│   │   ├── scheduler.py                 # APScheduler market-hours integration
-│   │   └── heartbeat.py                 # HeartbeatMonitor + Telegram alerts
 │   ├── storage/
 │   │   ├── base.py                      # AbstractRepository
 │   │   └── repository.py                # Repository (all DB operations)
@@ -661,23 +664,20 @@ trading-platform/
 │   ├── di/
 │   │   ├── container.py                 # Dishka container builder
 │   │   └── providers/
-│   │       ├── infra.py                 # Settings, DB, Redis, MessageBus, Repository
+│   │       ├── infra.py                 # Settings, DB, Repository, PriceStore
 │   │       ├── broker.py                # Broker, BrokerStream, KiteClient
-│   │       ├── components.py            # Runtime, AlgoRunner, RiskController, etc.
-│   │       ├── execution.py             # make_execution_engine() factory
-│   │       ├── risk.py                  # make_risk_controller() factory
+│   │       ├── components.py            # Runtime, all components + registries
 │   │       ├── features.py              # make_feature_engine() factory
 │   │       └── strategy.py              # make_strategy() factory
 │   └── scripts/
 │       ├── login.py                     # daily Zerodha token refresh
 │       └── fetch_data.py                # download historical OHLCV to Parquet
 ├── alembic/                             # DB migrations
-├── tst/unit/                            # unit tests (fakeredis + aiosqlite)
+├── tst/unit/                            # unit tests (aiosqlite, no external services)
 ├── strategy-testing/
 │   ├── testing/
 │   │   ├── backtesting/engine.py        # BacktestSession
 │   │   ├── backtesting/metrics.py       # Sharpe, CAGR, max drawdown, etc.
-│   │   ├── local_bus.py                 # LocalMessageBus (in-process, no Redis)
 │   │   ├── monte_carlo/                 # Monte Carlo simulation
 │   │   └── simulators/
 │   │       ├── candle_player.py         # replays Parquet files as CandleEvents
@@ -692,7 +692,7 @@ trading-platform/
 
 ## Adding a New Strategy
 
-1. **Create the strategy class** in `src/trading/strategy/examples/my_strategy.py`:
+1. **Create the strategy class** in `src/trading/strategy/my_strategy.py`:
 
 ```python
 from trading.strategy.base import Signal, Strategy
@@ -719,12 +719,14 @@ case "my_strategy":
     return MyStrategy(**params)
 ```
 
-3. **Configure it** via the `ALGOS` env var or `strategy_config.json`:
+3. **Configure it** in `pipeline.py` or via the `ALGOS` env var:
 
-```json
-{
-  "strategy": { "id": "my_strategy", "params": {} }
-}
+```python
+algo_config = AlgoConfig(
+    instrument_strategy_map={"INFY": "my_strategy"},
+    instrument_feature_map={"INFY": "technical"},
+    ...
+)
 ```
 
 4. **Backtest it** — the existing `BacktestSession` will run it automatically with the same risk and execution logic as live trading.
@@ -733,14 +735,16 @@ case "my_strategy":
 
 ## Key Design Decisions
 
-**Everything is event-driven.** Components communicate only via the message bus. No component holds a reference to another. This makes each layer independently testable and replaceable.
+**Direct function calls, not a message bus.** Each tick flows through `on_tick()` as a straight chain of `await registry.handle(event)` calls. There is no Redis pub/sub, no channel names to remember, no subscription management. The entire data flow is visible in 20 lines of `pipeline.py`.
 
-**Every component depends on abstractions.** `MessageBus`, `AbstractRepository`, `AbstractPriceStore`, and `AbstractRuntime` are all ABCs. Concrete implementations (`RedisMessageBus`, `Repository`, `PriceStore`, `Runtime`) are only named inside the DI providers. Swapping a transport or storage backend means adding a new class and changing one line in a provider.
+**Registries own their config.** Each pipeline stage is a single file with a `@dataclass` config and a registry class. `TickConfig` + `TickRegistry` live in `registry/tick.py`. Reading one file tells you everything about that stage — what it needs, what it produces, and what it persists.
+
+**CircuitBreaker flows by reference, not by flag.** `TickRegistry` creates the `CircuitBreaker` and exposes it as `tick_reg.circuit`. `RiskRegistry` receives the same object at construction time. When the WebSocket drops, `TickRegistry` starts a 30-second timer; `RiskRegistry` reads `circuit.is_open()` directly. No shared state store, no flag keys to mistype.
 
 **tick_log_id flows through the entire pipeline.** Every event from `TickEvent` to `FillEvent` carries the `tick_log_id` of the originating market tick. The `decision_logs` table uses it as a foreign key, so a single SQL query on `tick_log_id` reconstructs the complete causal chain: which tick triggered which candle, which candle triggered which signal, which signal was accepted or rejected and why, and which order was placed as a result.
 
-**Backtests reuse live code exactly.** `AlgoRunner`, `RiskController`, and `DirectExecutionEngine` run unchanged in backtests. The only differences are the data source (`CandlePlayer` instead of WebSocket), the broker (`SlippageFillSimulator` instead of Zerodha), the clock (`SimulatedClock` instead of wall time), and the message bus (`LocalMessageBus` instead of Redis). If a strategy behaves differently in backtesting than in live trading, it is a data or timing difference, not a code difference.
+**Backtests reuse live code exactly.** `AlgoRegistry`, `RiskRegistry`, and `ExecRegistry` run unchanged in backtests. The only differences are the data source (`CandlePlayer` instead of WebSocket), the broker (`SlippageFillSimulator` instead of Zerodha), and the clock (`SimulatedClock` instead of wall time). If a strategy behaves differently in backtesting than in live trading, it is a data or timing difference, not a code difference.
 
-**Ordered startup prevents race conditions.** `Runtime` starts components sequentially: each component's `_setup()` must signal readiness before the next one begins. The ingestor is connected and subscribed before the candle aggregator starts listening, which is started before the algo runner subscribes to candles. No component can miss events from its upstream dependency.
+**Ordered startup prevents race conditions.** `Runtime` starts components sequentially: each component's `_setup()` must complete before the next one begins. `KiteIngestor` is connected and subscribed before `CandleAggregator` runs its warmup, which completes before `AlgoRunner` starts. No component can miss events from its upstream dependency.
 
-**Position updates are atomic.** Order status and position changes happen in a single SQLAlchemy transaction using `SELECT FOR UPDATE`. Concurrent fills for the same symbol cannot race and produce an inconsistent position.
+**Position updates are atomic.** Order status and position changes happen in a single SQLAlchemy transaction. Concurrent fills for the same symbol cannot race and produce an inconsistent position.
