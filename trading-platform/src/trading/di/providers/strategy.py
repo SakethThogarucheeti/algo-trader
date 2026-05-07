@@ -2,24 +2,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from trading.core.clock import Clock
 from trading.strategy.base import Strategy
+from trading.strategy.factory import StrategyFactory
 
 
-def make_strategy(strategy_id: str, params: dict[str, Any] | None = None) -> Strategy:
+def make_strategy(
+    strategy_id: str,
+    params: dict[str, Any] | None = None,
+    clock: Clock | None = None,
+) -> Strategy:
     """
-    Instantiate the strategy registered under *strategy_id*.
+    Instantiate the strategy identified by *strategy_id*.
 
     Parameters
     ----------
     strategy_id:
-        Alias registered on the Strategy subclass (e.g. ``"ema_crossover"``).
+        Key in ``StrategyFactory`` (e.g. ``"ema_crossover"``).
     params:
         Optional keyword arguments forwarded to the strategy constructor.
-        Use this for hyperparameter tuning (e.g. ``{"fast": 5, "slow": 13}``).
+    clock:
+        Optional clock injected into strategies that accept one (e.g.
+        ``VwapReversionStrategy``). Pass a ``SimulatedClock`` during backtesting.
 
     To add a new strategy: create a module under ``trading/strategy/``, subclass
-    ``Strategy``, and set a class-level ``alias`` attribute. No changes here needed.
-    The registry discovers and imports all modules in that package automatically
-    on the first call.
+    ``Strategy``, and add an entry to ``_STRATEGIES`` in ``trading/strategy/factory.py``.
     """
-    return Strategy.create(strategy_id, **(params or {}))
+    return StrategyFactory.create(strategy_id, params=params, clock=clock)

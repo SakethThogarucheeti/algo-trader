@@ -1,28 +1,20 @@
 """
-Strategy plugin system.
+Strategy package.
 
 Public API
 ----------
-    from trading.strategy import Strategy, Signal, strategy
+    from trading.strategy import Strategy, Signal, StrategyFactory
 
-    # Look up a registered strategy class by alias
-    cls = Strategy.get("ema_crossover")
+    # Look up a strategy class by ID
+    cls = StrategyFactory.get("ema_crossover")
 
-    # Instantiate directly
-    inst = Strategy.create("ema_crossover", fast=5, slow=13)
+    # Instantiate with optional params and clock
+    inst = StrategyFactory.create("ema_crossover", params={"fast": 5, "slow": 13})
 
-    # Register via decorator (alternative to class-level alias attribute)
-    @strategy("my_strategy")
-    class MyStrategy(Strategy):
-        ...
+    # Inspect all registered strategies
+    print(StrategyFactory.registered())
 
-    # Trigger discovery of all modules in a package
-    Strategy.discover("my_app.strategies")
-
-    # Inspect the full registry
-    print(Strategy.registered())
-
-Built-in strategies (auto-discovered on first use):
+Built-in strategies:
     "ema_crossover"          EmaCrossoverStrategy
     "rsi_mean_reversion"     RsiMeanReversionStrategy
     "vwap_reversion"         VwapReversionStrategy
@@ -30,6 +22,6 @@ Built-in strategies (auto-discovered on first use):
 """
 
 from trading.strategy.base import Signal, Strategy
-from trading.strategy.decorators import strategy
+from trading.strategy.factory import StrategyFactory
 
-__all__ = ["Signal", "Strategy", "strategy"]
+__all__ = ["Signal", "Strategy", "StrategyFactory"]
