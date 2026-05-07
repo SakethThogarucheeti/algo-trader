@@ -41,16 +41,19 @@ dev = [
     "fakeredis>=2.0",
     "pre-commit>=4.0",
     "pytest-cov>=7.1.0",
+    "testcontainers[postgres]>=4.0",
+    "scipy>=1.13",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tst"]
+testpaths = ["tst/unit"]
 
 [project.scripts]
 build = "trading.ci:main"
 start = "trading.start:main"
 fetch-data = "trading.scripts.fetch_data:main"
+import-candles = "trading.scripts.import_candles:main"
 day-end-report = "trading.scripts.day_end_report:main"
 week-report = "trading.scripts.week_report:main"
 month-report = "trading.scripts.month_report:main"
