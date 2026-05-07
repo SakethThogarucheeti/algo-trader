@@ -1,134 +1,103 @@
-"""
-RSI Mean-Reversion Strategy.
-
-Logic
------
-- BUY  when RSI was below *oversold* threshold on the previous bar and has
-       crossed back above it on the current bar (momentum reverting upward).
-- SELL when RSI was above *overbought* threshold on the previous bar and has
-       crossed back below it on the current bar (momentum reverting downward).
-
-Stop distance = ATR × atr_multiplier.
-
-This is a counter-trend strategy suited to choppy / range-bound markets.
-It performs poorly in sustained trending regimes.
-
-Parameters
-----------
-rsi_period:
-    RSI lookback period (default 14).
-oversold:
-    RSI level below which a position is considered oversold (default 30).
-overbought:
-    RSI level above which a position is considered overbought (default 70).
-atr_period:
-    ATR smoothing period for stop sizing (default 14).
-atr_multiplier:
-    ATR multiplier for stop distance (default 1.5).
-"""
+"""RSI Mean-Reversion Strategy."""
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-import polars as pl
-
-from trading.core.schemas import InstrumentType, Side, SignalType
+from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
+from trading.indicators.library.atr import ATR
+from trading.indicators.library.rsi import RSI
 from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_RSI_PERIOD = 14
-_DEFAULT_OVERSOLD = 30.0
-_DEFAULT_OVERBOUGHT = 70.0
-_DEFAULT_ATR_PERIOD = 14
-_DEFAULT_ATR_MULTIPLIER = 1.5
-
 
 class RsiMeanReversionStrategy(Strategy):
-    """RSI mean-reversion: buy the oversold bounce, sell the overbought fade."""
+    """
+    Buy the oversold bounce, sell the overbought fade.
+
+    BUY  when RSI crosses back above *oversold* (was below, now above).
+    SELL when RSI crosses back below *overbought* (was above, now below).
+    Stop distance = ATR × atr_multiplier.
+    """
 
     alias = "rsi_mean_reversion"
 
     def __init__(
         self,
-        rsi_period: int = _DEFAULT_RSI_PERIOD,
-        oversold: float = _DEFAULT_OVERSOLD,
-        overbought: float = _DEFAULT_OVERBOUGHT,
-        atr_period: int = _DEFAULT_ATR_PERIOD,
-        atr_multiplier: float = _DEFAULT_ATR_MULTIPLIER,
+        rsi_period: int = 14,
+        oversold: float = 30.0,
+        overbought: float = 70.0,
+        atr_period: int = 14,
+        atr_multiplier: float = 1.5,
     ) -> None:
         if oversold >= overbought:
             raise ValueError(f"oversold ({oversold}) must be less than overbought ({overbought})")
-        self._rsi_col = f"rsi_{rsi_period}"
-        self._atr_col = f"atr_{atr_period}"
+        self._rsi_period = rsi_period
         self._oversold = oversold
         self._overbought = overbought
+        self._atr_period = atr_period
         self._atr_multiplier = atr_multiplier
+        self._store: Any = None
+        # indicator cache: symbol → (rsi, atr)
+        self._inds: dict[str, tuple[RSI, ATR]] = {}
+        self._prev_rsi: dict[str, float | None] = {}
 
-    def on_candle(
+    def set_store(self, store: Any) -> None:
+        self._store = store
+
+    def _get_inds(self, symbol: str, interval: str) -> tuple[RSI, ATR]:
+        if symbol not in self._inds:
+            store = self._store
+            self._inds[symbol] = (
+                RSI(store, symbol, interval),
+                ATR(store, symbol, interval),
+            )
+        return self._inds[symbol]
+
+    def get_state(self) -> dict[str, object]:
+        return {}
+
+    async def on_candle(
         self,
         symbol: str,
         instrument_type: InstrumentType,
-        df: pl.DataFrame,
+        candle: CandleEvent,
     ) -> Signal | None:
-        if df.height < 2:
-            return None
+        rsi_ind, atr_ind = self._get_inds(symbol, candle.interval)
+        rsi_params = RSI.Parameters(period=self._rsi_period)
+        atr_params = ATR.Parameters(period=self._atr_period)
 
-        last2 = df.tail(2)
+        rsi = await rsi_ind.compute(rsi_params)
+        atr = await atr_ind.compute(atr_params)
 
-        for col in (self._rsi_col, self._atr_col):
-            if col not in last2.columns:
-                logger.debug("RsiMeanReversion[%s]: missing column %r", symbol, col)
-                return None
-            if last2[col].is_null().any() or last2[col].is_nan().any():
-                return None
+        prev_rsi = self._prev_rsi.get(symbol)
+        self._prev_rsi[symbol] = rsi
 
-        prev_rsi = float(last2[self._rsi_col][0])
-        cur_rsi = float(last2[self._rsi_col][1])
-        atr = float(last2[self._atr_col][1])
-
-        if atr <= 0:
+        if rsi is None or atr is None or atr <= 0 or prev_rsi is None:
             return None
 
         stop_distance = self._atr_multiplier * atr
 
-        # BUY: RSI crossed back above oversold threshold (bounce signal)
-        if prev_rsi < self._oversold and cur_rsi >= self._oversold:
-            logger.info(
-                "RsiMeanReversion[%s]: BUY signal  rsi=%.1f→%.1f  oversold=%.0f  stop=%.4f",
-                symbol,
-                prev_rsi,
-                cur_rsi,
-                self._oversold,
-                stop_distance,
-            )
+        if prev_rsi <= self._oversold and rsi > self._oversold:
+            logger.info("RsiMeanReversion[%s]: BUY  rsi=%.1f→%.1f stop=%.4f",
+                        symbol, prev_rsi, rsi, stop_distance)
             return Signal(
-                symbol=symbol,
-                instrument_type=instrument_type,
-                side=Side.BUY,
-                strategy_id=self.id,
-                signal_type=SignalType.ENTRY,
-                stop_distance=stop_distance,
+                symbol=symbol, instrument_type=instrument_type,
+                side=Side.BUY, strategy_id=self.id,
+                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                timestamp=candle.timestamp,
             )
 
-        # SELL: RSI crossed back below overbought threshold (fade signal)
-        if prev_rsi > self._overbought and cur_rsi <= self._overbought:
-            logger.info(
-                "RsiMeanReversion[%s]: SELL signal rsi=%.1f→%.1f  overbought=%.0f  stop=%.4f",
-                symbol,
-                prev_rsi,
-                cur_rsi,
-                self._overbought,
-                stop_distance,
-            )
+        if prev_rsi >= self._overbought and rsi < self._overbought:
+            logger.info("RsiMeanReversion[%s]: SELL rsi=%.1f→%.1f stop=%.4f",
+                        symbol, prev_rsi, rsi, stop_distance)
             return Signal(
-                symbol=symbol,
-                instrument_type=instrument_type,
-                side=Side.SELL,
-                strategy_id=self.id,
-                signal_type=SignalType.ENTRY,
-                stop_distance=stop_distance,
+                symbol=symbol, instrument_type=instrument_type,
+                side=Side.SELL, strategy_id=self.id,
+                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                timestamp=candle.timestamp,
             )
 
         return None
