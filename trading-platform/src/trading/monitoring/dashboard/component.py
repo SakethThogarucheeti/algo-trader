@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from trading.core.clock import Clock, SYSTEM_CLOCK
+from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.engine.component import Component
 from trading.monitoring.dashboard.app import build_app
 

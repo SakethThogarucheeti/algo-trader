@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from datetime import UTC, datetime
@@ -30,9 +29,9 @@ def _find_db_url() -> str:
             load_dotenv(candidate)
             break
 
-    url = os.environ.get("DATABASE_URL", "")
+    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL", "")
     if not url:
-        sys.exit("ERROR: DATABASE_URL must be set in .env")
+        sys.exit("ERROR: DATABASE_URL or POSTGRES_URL must be set in .env")
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
@@ -45,13 +44,11 @@ async def run_report(start: datetime, end: datetime, title: str) -> None:
     engine = create_async_engine(_find_db_url(), echo=False)
 
     async with AsyncSession(engine) as session:
-        signals, decisions, audit_logs, heartbeats, algo_configs = await asyncio.gather(
-            fetch_signals(session, start, end),
-            fetch_decisions(session, start, end),
-            fetch_audit_logs(session, start, end),
-            fetch_heartbeats(session),
-            fetch_algo_configs(session),
-        )
+        signals = await fetch_signals(session, start, end)
+        decisions = await fetch_decisions(session, start, end)
+        audit_logs = await fetch_audit_logs(session, start, end)
+        heartbeats = await fetch_heartbeats(session)
+        algo_configs = await fetch_algo_configs(session)
 
     await engine.dispose()
 

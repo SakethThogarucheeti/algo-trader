@@ -10,7 +10,6 @@ from trading.core.models import AuditLog, DecisionLog, Heartbeat, Signal
 from trading.core.schemas import OrderStatus
 from trading.reports.pnl import compute_pnl
 
-
 _W = 70
 
 
@@ -165,7 +164,9 @@ def print_strategy_section(
             state = cfg["state"]
             bars_seen = state.get("bars_seen", "?")  # type: ignore[union-attr]
             warmup_complete = state.get("warmup_complete", False)  # type: ignore[union-attr]
-            warmup_str = "complete" if warmup_complete else f"{bars_seen}/{cfg['warmup_candles']} bars"
+            warmup_str = (
+                "complete" if warmup_complete else f"{bars_seen}/{cfg['warmup_candles']} bars"
+            )
             params_str = ", ".join(f"{k}={v}" for k, v in cfg["params"].items())  # type: ignore[union-attr]
             print(f"    {cfg['name']} [{status}]")
             print(f"      strategy: {cfg['strategy_id']}  equity: {cfg['equity']:,.0f}")

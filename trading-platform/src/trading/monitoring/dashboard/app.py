@@ -12,8 +12,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from trading.core.clock import Clock, SYSTEM_CLOCK
-from trading.core.models import DecisionLog, Heartbeat, Order, Position, Signal
+from trading.core.clock import SYSTEM_CLOCK, Clock
+from trading.core.models import Candle, DecisionLog, Heartbeat, Order, Position, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +67,11 @@ def build_app(
         return JSONResponse(content=sessions)
 
     # ------------------------------------------------------------------
-    # GET /api/positions — current open positions (htmx fragment)
+    # GET /api/positions — current open positions (JSON)
     # ------------------------------------------------------------------
 
-    @app.get("/api/positions", response_class=HTMLResponse)
-    async def get_positions() -> HTMLResponse:
+    @app.get("/api/positions")
+    async def get_positions() -> JSONResponse:
         async with session_factory() as session:
             result = await session.execute(
                 select(Position)
@@ -80,58 +80,49 @@ def build_app(
             )
             positions = result.scalars().all()
 
-        if not positions:
-            return HTMLResponse(_empty_table("No open positions"))
-
-        rows_html = "".join(
-            f"<tr>"
-            f"<td>{p.symbol}</td>"
-            f"<td>{p.instrument_type}</td>"
-            f"<td class='{'pos' if p.net_qty > 0 else 'neg'}'>{p.net_qty:+d}</td>"
-            f"<td>{float(p.avg_price):.2f}</td>"
-            f"<td>{p.updated_at.strftime('%H:%M:%S') if p.updated_at else '—'}</td>"
-            f"</tr>"
+        return JSONResponse(content=[
+            {
+                "symbol": p.symbol,
+                "instrument_type": p.instrument_type,
+                "net_qty": p.net_qty,
+                "avg_price": float(p.avg_price),
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            }
             for p in positions
-        )
-        return HTMLResponse(
-            f"<table class='data-table'>"
-            "<thead><tr>"
-            "<th>Symbol</th><th>Type</th><th>Qty</th><th>Avg Price</th><th>Updated</th>"
-            "</tr></thead>"
-            f"<tbody>{rows_html}</tbody>"
-            f"</table>"
-        )
+        ])
 
     # ------------------------------------------------------------------
-    # GET /api/health — heartbeat status (htmx fragment)
+    # GET /api/health — heartbeat status (JSON)
     # ------------------------------------------------------------------
 
-    @app.get("/api/health", response_class=HTMLResponse)
-    async def get_health() -> HTMLResponse:
+    @app.get("/api/health")
+    async def get_health() -> JSONResponse:
         async with session_factory() as session:
             result = await session.execute(select(Heartbeat).order_by(Heartbeat.module))
             heartbeats = result.scalars().all()
 
-        if not heartbeats:
-            return HTMLResponse(_empty_table("No heartbeat data yet"))
-
         now = clock.now()
-        stale_threshold = 30  # seconds — matches heartbeat_timeout_secs default
+        stale_threshold = 30
 
-        rows_html = "".join(_heartbeat_row(hb, now, stale_threshold) for hb in heartbeats)
-        return HTMLResponse(
-            f"<table class='data-table'>"
-            f"<thead><tr><th>Module</th><th>Last Seen</th><th>Status</th></tr></thead>"
-            f"<tbody>{rows_html}</tbody>"
-            f"</table>"
-        )
+        rows = []
+        for hb in heartbeats:
+            last_seen = hb.last_seen
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=UTC)
+            stale = (now - last_seen).total_seconds() > stale_threshold
+            rows.append({
+                "module": hb.module,
+                "last_seen": last_seen.isoformat(),
+                "stale": stale,
+            })
+        return JSONResponse(content=rows)
 
     # ------------------------------------------------------------------
-    # GET /api/signals?session_id= — last 50 signals (htmx fragment)
+    # GET /api/signals?session_id= — last 50 signals (JSON)
     # ------------------------------------------------------------------
 
-    @app.get("/api/signals", response_class=HTMLResponse)
-    async def get_signals(session_id: str = "") -> HTMLResponse:
+    @app.get("/api/signals")
+    async def get_signals(session_id: str = "") -> JSONResponse:
         async with session_factory() as session:
             stmt = (
                 select(DecisionLog)
@@ -148,42 +139,60 @@ def build_app(
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
-        if not rows:
-            return HTMLResponse(_empty_table("No signals yet"))
-
-        rows_html = "".join(
-            f"<tr>"
-            f"<td>{r.created_at.strftime('%H:%M:%S') if r.created_at else '—'}</td>"
-            f"<td>{r.symbol}</td>"
-            f"<td>{r.algo_name or '—'}</td>"
-            f"<td class='{_step_class(r.step)}'>{r.step}</td>"
-            f"<td>{_context_summary(r.context)}</td>"
-            f"</tr>"
+        return JSONResponse(content=[
+            {
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "symbol": r.symbol,
+                "algo_name": r.algo_name or "—",
+                "step": r.step,
+                "context": r.context,
+            }
             for r in rows
-        )
-        return HTMLResponse(
-            f"<table class='data-table'>"
-            f"<thead><tr><th>Time</th><th>Symbol</th><th>Algo</th><th>Step</th><th>Context</th></tr></thead>"
-            f"<tbody>{rows_html}</tbody>"
-            f"</table>"
-        )
+        ])
 
     # ------------------------------------------------------------------
-    # GET /api/algos — algo config + live state (htmx fragment)
+    # GET /api/algos — algo config + live state (JSON)
     # ------------------------------------------------------------------
 
-    @app.get("/api/algos", response_class=HTMLResponse)
-    async def get_algos() -> HTMLResponse:
+    @app.get("/api/algos")
+    async def get_algos() -> JSONResponse:
         from trading.storage.repository import Repository
         repo = Repository()
         async with session_factory() as session:
             algos = await repo.get_algo_configs_with_state(session)
+        return JSONResponse(content=algos)
 
-        if not algos:
-            return HTMLResponse(_empty_table("No algo configs found — bot not started yet"))
+    # ------------------------------------------------------------------
+    # GET /api/candles?symbol=&interval=&limit= — OHLCV bars (Chart.js JSON)
+    # ------------------------------------------------------------------
 
-        cards = "".join(_algo_card(a) for a in algos)
-        return HTMLResponse(cards)
+    @app.get("/api/candles")
+    async def get_candles_endpoint(
+        symbol: str = "INFY",
+        interval: str = "15min",
+        limit: int = 100,
+    ) -> JSONResponse:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Candle)
+                .where(Candle.symbol == symbol, Candle.interval == interval)
+                .order_by(Candle.ts.desc())
+                .limit(limit)
+            )
+            rows = list(reversed(result.scalars().all()))
+
+        points = [
+            {
+                "ts": c.ts.isoformat(),
+                "open": float(c.open),
+                "high": float(c.high),
+                "low": float(c.low),
+                "close": float(c.close),
+                "volume": c.volume,
+            }
+            for c in rows
+        ]
+        return JSONResponse(content=points)
 
     # ------------------------------------------------------------------
     # GET /api/ticks?symbol=&limit= — recent tick prices (Chart.js JSON)
@@ -307,97 +316,6 @@ def build_app(
 
 
 def _session_filter(model: type[DecisionLog], session_id: str) -> object:
-    """Build a SQLAlchemy WHERE clause for session_id filtering."""
     if session_id:
         return model.session_id == session_id
     return model.session_id.is_(None)
-
-
-def _empty_table(message: str) -> str:
-    return f"<p class='empty-state'>{message}</p>"
-
-
-def _heartbeat_row(hb: Heartbeat, now: datetime, stale_threshold: int) -> str:
-    last_seen = hb.last_seen
-    if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=UTC)
-    age_secs = (now - last_seen).total_seconds()
-    is_stale = age_secs > stale_threshold
-    status_cls = "neg" if is_stale else "pos"
-    status_txt = "STALE" if is_stale else "OK"
-    return (
-        f"<tr>"
-        f"<td>{hb.module}</td>"
-        f"<td>{last_seen.strftime('%H:%M:%S')}</td>"
-        f"<td class='{status_cls}'>{status_txt}</td>"
-        f"</tr>"
-    )
-
-
-def _step_class(step: str) -> str:
-    return {
-        "SIGNAL_ACCEPTED": "pos",
-        "SIGNAL_REJECTED": "neg",
-        "SIGNAL_GENERATED": "neutral",
-    }.get(step, "")
-
-
-def _context_summary(context_json: str) -> str:
-    try:
-        ctx = json.loads(context_json)
-        if "reason" in ctx:
-            return ctx["reason"]
-        if "qty" in ctx:
-            return f"qty={ctx['qty']}"
-        return ", ".join(f"{k}={v}" for k, v in list(ctx.items())[:3])
-    except Exception:
-        return context_json[:60] if context_json else "—"
-
-
-def _algo_card(algo: dict[str, object]) -> str:
-    state: dict[str, object] = algo.get("state", {})  # type: ignore[assignment]
-    bars_seen = state.get("bars_seen", 0)
-    warmup_candles = state.get("warmup_candles") or algo.get("warmup_candles", 0)
-    warmup_complete = state.get("warmup_complete", False)
-    bars_remaining = state.get("bars_remaining", warmup_candles)
-    last_signal_at = state.get("last_signal_at") or "—"
-    params: dict[str, object] = algo.get("params", {})  # type: ignore[assignment]
-
-    pct = min(100, int(bars_seen / warmup_candles * 100)) if warmup_candles else 100
-    bar_colour = "var(--pos)" if warmup_complete else "var(--neutral)"
-    status_label = (
-        "<span class='pos'>LIVE</span>"
-        if warmup_complete
-        else f"<span class='neutral'>{bars_remaining} bars until live</span>"
-    )
-
-    # Strategy params rows
-    param_rows = "".join(
-        f"<tr><td style='color:var(--muted)'>{k}</td><td>{v}</td></tr>"
-        for k, v in params.items()
-    ) if params else ""
-
-    # Live state rows — skip internal bookkeeping keys shown elsewhere
-    _skip = {"bars_seen", "warmup_candles", "warmup_complete", "bars_remaining", "last_signal_at"}
-    state_rows = "".join(
-        f"<tr><td style='color:var(--muted)'>{k}</td><td>{v if v is not None else '—'}</td></tr>"
-        for k, v in state.items()
-        if k not in _skip
-    )
-
-    return f"""
-<div style="margin-bottom:1rem;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
-    <span style="font-weight:600">{algo['name']}</span>
-    <span style="font-size:11px;color:var(--muted)">{algo['strategy_id']}</span>
-    {status_label}
-  </div>
-  <div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:0.6rem;">
-    <div style="width:{pct}%;height:6px;border-radius:4px;background:{bar_colour};transition:width 0.5s;"></div>
-  </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:0.5rem;">
-    {bars_seen} / {warmup_candles} warm-up bars &nbsp;·&nbsp; last signal: {last_signal_at}
-  </div>
-  {"<table class='data-table' style='margin-bottom:0.4rem'>" + param_rows + "</table>" if param_rows else ""}
-  {"<table class='data-table'>" + state_rows + "</table>" if state_rows else ""}
-</div>"""

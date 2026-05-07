@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Algo Trading Dashboard</title>
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -70,7 +70,6 @@
     main {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto;
       gap: 1rem;
       padding: 1rem 1.5rem;
     }
@@ -98,37 +97,6 @@
     }
 
     .card-body { padding: 0.75rem 1rem; }
-
-    /* tables */
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .data-table th {
-      text-align: left;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      padding: 0.3rem 0.5rem;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .data-table td {
-      padding: 0.3rem 0.5rem;
-      border-bottom: 1px solid #1e2130;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 200px;
-    }
-
-    .data-table tr:last-child td { border-bottom: none; }
-
-    .pos     { color: var(--pos); }
-    .neg     { color: var(--neg); }
-    .neutral { color: var(--neutral); }
 
     .empty-state {
       color: var(--muted);
@@ -159,9 +127,6 @@
     .decision-entry .step { min-width: 18ch; }
     .decision-entry .ctx  { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 
-    /* chart */
-    #pnl-chart-container { position: relative; height: 200px; }
-
     /* htmx indicator */
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; color: var(--muted); }
@@ -184,46 +149,37 @@
 
   <!-- Algo Status -->
   <div class="card full-width">
-    <div class="card-header">
-      <span>Algo Status</span>
-      <span class="htmx-indicator" id="algo-spinner">loading…</span>
-    </div>
-    <div class="card-body"
-         id="algo-body"
-         hx-get="/api/algos"
-         hx-trigger="load, every 5s"
-         hx-indicator="#algo-spinner">
-      <p class="empty-state">Loading…</p>
-    </div>
+    <div class="card-header"><span>Algo Status</span></div>
+    <div class="card-body" id="algo-body"><p class="empty-state">Loading…</p></div>
   </div>
 
   <!-- Positions -->
   <div class="card">
-    <div class="card-header">
-      <span>Positions</span>
-      <span class="htmx-indicator" id="pos-spinner">loading…</span>
-    </div>
-    <div class="card-body"
-         id="positions-body"
-         hx-get="/api/positions"
-         hx-trigger="load, every 5s"
-         hx-indicator="#pos-spinner">
-      <p class="empty-state">Loading…</p>
-    </div>
+    <div class="card-header"><span>Positions</span></div>
+    <div class="card-body" id="positions-body"><p class="empty-state">Loading…</p></div>
   </div>
 
   <!-- Health -->
   <div class="card">
+    <div class="card-header"><span>Component Health</span></div>
+    <div class="card-body" id="health-body"><p class="empty-state">Loading…</p></div>
+  </div>
+
+  <!-- Candlestick chart -->
+  <div class="card full-width">
     <div class="card-header">
-      <span>Component Health</span>
-      <span class="htmx-indicator" id="health-spinner">loading…</span>
+      <span>Candlesticks</span>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span id="candle-symbol" style="font-size:11px;color:var(--accent)">INFY</span>
+        <select id="candle-interval" onchange="refreshCandles()" style="font-size:11px;">
+          <option value="1min">1min</option>
+          <option value="5min" selected>5min</option>
+          <option value="15min">15min</option>
+        </select>
+      </div>
     </div>
-    <div class="card-body"
-         id="health-body"
-         hx-get="/api/health"
-         hx-trigger="load, every 5s"
-         hx-indicator="#health-spinner">
-      <p class="empty-state">Loading…</p>
+    <div class="card-body" style="padding:0;">
+      <div id="candle-chart" style="height:300px;width:100%;"></div>
     </div>
   </div>
 
@@ -233,38 +189,23 @@
       <span>Tick Price</span>
       <span id="tick-symbol" style="font-size:11px;color:var(--accent)">INFY</span>
     </div>
-    <div class="card-body">
-      <div id="tick-chart-container" style="position:relative;height:200px;">
-        <canvas id="tick-chart"></canvas>
-      </div>
+    <div class="card-body" style="padding:0;">
+      <div id="tick-chart" style="height:220px;width:100%;"></div>
     </div>
   </div>
 
   <!-- P&L chart -->
   <div class="card">
-    <div class="card-header">
-      <span>Cumulative P&amp;L</span>
-    </div>
-    <div class="card-body">
-      <div id="pnl-chart-container" style="position:relative;height:200px;">
-        <canvas id="pnl-chart"></canvas>
-      </div>
+    <div class="card-header"><span>Cumulative P&amp;L</span></div>
+    <div class="card-body" style="padding:0;">
+      <div id="pnl-chart" style="height:220px;width:100%;"></div>
     </div>
   </div>
 
   <!-- Signals -->
   <div class="card">
-    <div class="card-header">
-      <span>Recent Signals</span>
-      <span class="htmx-indicator" id="sig-spinner">loading…</span>
-    </div>
-    <div class="card-body"
-         id="signals-body"
-         hx-get="/api/signals"
-         hx-trigger="load, every 10s"
-         hx-indicator="#sig-spinner">
-      <p class="empty-state">Loading…</p>
-    </div>
+    <div class="card-header"><span>Recent Signals</span></div>
+    <div class="card-body" id="signals-body"><p class="empty-state">Loading…</p></div>
   </div>
 
   <!-- Live decision feed -->
@@ -282,6 +223,54 @@
 
 <script>
 // ---------------------------------------------------------------------------
+// ECharts theme
+// ---------------------------------------------------------------------------
+
+const T = {
+  bg:     "#1a1d27",
+  grid:   "#1e2130",
+  border: "#2a2d3a",
+  text:   "#e2e8f0",
+  muted:  "#64748b",
+  pos:    "#22c55e",
+  neg:    "#ef4444",
+  neutral:"#f59e0b",
+  accent: "#6366f1",
+  font:   "ui-monospace,'Cascadia Code','JetBrains Mono',monospace",
+};
+
+const _TT = { backgroundColor: T.bg, borderColor: T.border, textStyle: { color: T.text, fontSize: 11, fontFamily: T.font } };
+const _AX_X = (extra={}) => Object.assign({ type:"category", data:[], boundaryGap:false, axisLine:{lineStyle:{color:T.border}}, axisTick:{show:false}, axisLabel:{color:T.muted,fontSize:10}, splitLine:{show:false} }, extra);
+const _AX_Y = (extra={}) => Object.assign({ scale:true, axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:T.muted,fontSize:10}, splitLine:{lineStyle:{color:T.grid}} }, extra);
+const _GRID  = (extra={}) => Object.assign({ top:12, right:60, bottom:36, left:16, containLabel:true }, extra);
+
+function _ecInit(id) {
+  const el = document.getElementById(id);
+  const chart = echarts.init(el, null, { renderer:"canvas" });
+  new ResizeObserver(() => chart.resize()).observe(el);
+  return chart;
+}
+
+// ---------------------------------------------------------------------------
+// Shared table renderer — renders JSON arrays as simple HTML tables
+// ---------------------------------------------------------------------------
+
+function _renderTable(containerId, rows, columns) {
+  // columns: [{key, label, cls}]
+  const el = document.getElementById(containerId);
+  if (!rows.length) { el.innerHTML = "<p class='empty-state'>No data</p>"; return; }
+  const thead = "<thead><tr>" + columns.map(c => `<th style="text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:${T.muted};padding:0.3rem 0.5rem;border-bottom:1px solid ${T.border}">${c.label}</th>`).join("") + "</tr></thead>";
+  const tbody = "<tbody>" + rows.map(r =>
+    "<tr>" + columns.map(c => {
+      const cls = typeof c.cls === "function" ? c.cls(r) : (c.cls || "");
+      const val = typeof c.val === "function" ? c.val(r) : (r[c.key] ?? "—");
+      return `<td style="padding:0.3rem 0.5rem;border-bottom:1px solid #1e2130;white-space:nowrap;${cls ? `color:${cls}` : ""}">${val}</td>`;
+    }).join("") + "</tr>"
+  ).join("") + "</tbody>";
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">${thead}${tbody}</table>`;
+}
+
+// ---------------------------------------------------------------------------
 // Session management
 // ---------------------------------------------------------------------------
 
@@ -289,197 +278,265 @@ let currentSession = "";
 
 async function loadSessions() {
   try {
-    const res = await fetch("/api/sessions");
-    const sessions = await res.json();
+    const sessions = await fetch("/api/sessions").then(r => r.json());
     const sel = document.getElementById("session-select");
-    // keep the live option, add backtest sessions
     sessions.forEach(s => {
-      if (s !== null && s !== "") {
-        const opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s;
-        sel.appendChild(opt);
-      }
+      if (s) { const o = document.createElement("option"); o.value = o.textContent = s; sel.appendChild(o); }
     });
-  } catch (e) {
-    console.warn("Could not load sessions:", e);
-  }
+  } catch(e) { console.warn("Could not load sessions:", e); }
 }
 
 function onSessionChange(value) {
   currentSession = value;
-
-  // re-trigger htmx panels with new session_id
-  const signalsBody = document.getElementById("signals-body");
-  const newUrl = "/api/signals" + (value ? "?session_id=" + encodeURIComponent(value) : "");
-  signalsBody.setAttribute("hx-get", newUrl);
-  htmx.trigger(signalsBody, "load");
-
-  // restart SSE for new session
+  refreshSignals();
   startSSE(value);
 }
 
 // ---------------------------------------------------------------------------
-// P&L chart (Chart.js)
+// Algo Status — JSON → ECharts gauge per algo + table
 // ---------------------------------------------------------------------------
 
+async function refreshAlgos() {
+  try {
+    const algos = await fetch("/api/algos").then(r => r.json());
+    const el = document.getElementById("algo-body");
+    if (!algos.length) { el.innerHTML = "<p class='empty-state'>No algo configs found — bot not started yet</p>"; return; }
+
+    el.innerHTML = algos.map((a, i) => {
+      const s = a.state || {};
+      const barsSeen   = s.bars_seen || 0;
+      const warmup     = s.warmup_candles || a.warmup_candles || 1;
+      const complete   = s.warmup_complete || false;
+      const remaining  = s.bars_remaining ?? warmup;
+      const lastSig    = s.last_signal_at || "—";
+      const pct        = Math.min(100, Math.round(barsSeen / warmup * 100));
+      const statusHtml = complete
+        ? `<span style="color:${T.pos}">LIVE</span>`
+        : `<span style="color:${T.neutral}">${remaining} bars until live</span>`;
+
+      const skip = new Set(["bars_seen","warmup_candles","warmup_complete","bars_remaining","last_signal_at"]);
+      const stateRows = Object.entries(s).filter(([k]) => !skip.has(k))
+        .map(([k,v]) => `<tr><td style="color:${T.muted};padding:0.2rem 0.5rem">${k}</td><td style="padding:0.2rem 0.5rem">${v ?? "—"}</td></tr>`).join("");
+      const paramRows = Object.entries(a.params || {})
+        .map(([k,v]) => `<tr><td style="color:${T.muted};padding:0.2rem 0.5rem">${k}</td><td style="padding:0.2rem 0.5rem">${v}</td></tr>`).join("");
+
+      return `
+<div style="margin-bottom:1rem">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+    <span style="font-weight:600">${a.name}</span>
+    <span style="font-size:11px;color:${T.muted}">${a.strategy_id}</span>
+    ${statusHtml}
+  </div>
+  <div id="algo-gauge-${i}" style="height:32px;width:100%;margin-bottom:0.4rem"></div>
+  <div style="font-size:11px;color:${T.muted};margin-bottom:0.5rem">${barsSeen} / ${warmup} warm-up bars &nbsp;·&nbsp; last signal: ${lastSig}</div>
+  ${paramRows ? `<table style="width:100%;border-collapse:collapse;margin-bottom:0.4rem">${paramRows}</table>` : ""}
+  ${stateRows ? `<table style="width:100%;border-collapse:collapse">${stateRows}</table>` : ""}
+</div>`;
+    }).join("");
+
+    // Render a thin ECharts horizontal bar for each algo warmup progress
+    algos.forEach((a, i) => {
+      const s = a.state || {};
+      const barsSeen = s.bars_seen || 0;
+      const warmup   = s.warmup_candles || a.warmup_candles || 1;
+      const complete = s.warmup_complete || false;
+      const pct      = Math.min(100, Math.round(barsSeen / warmup * 100));
+      const colour   = complete ? T.pos : T.neutral;
+      const chart    = echarts.init(document.getElementById(`algo-gauge-${i}`));
+      chart.setOption({
+        backgroundColor: "transparent",
+        grid: { top:4, bottom:4, left:0, right:0 },
+        xAxis: { type:"value", min:0, max:100, show:false },
+        yAxis: { type:"category", data:[""], show:false },
+        series: [{
+          type:"bar", data:[{ value: pct, itemStyle:{ color:colour, borderRadius:4 } }],
+          barMaxWidth: "100%", barMinHeight:6,
+          label: { show:false },
+          backgroundStyle: { color: T.border, borderRadius:4 },
+          showBackground: true,
+        }],
+      });
+    });
+  } catch(e) { console.warn("Algo fetch failed:", e); }
+}
+
 // ---------------------------------------------------------------------------
-// Tick price chart (Chart.js)
+// Positions — JSON → table
 // ---------------------------------------------------------------------------
 
-let tickChart = null;
+async function refreshPositions() {
+  try {
+    const rows = await fetch("/api/positions").then(r => r.json());
+    _renderTable("positions-body", rows, [
+      { key:"symbol",          label:"Symbol" },
+      { key:"instrument_type", label:"Type" },
+      { key:"net_qty",         label:"Qty",   cls: r => r.net_qty > 0 ? T.pos : T.neg, val: r => (r.net_qty > 0 ? "+" : "") + r.net_qty },
+      { key:"avg_price",       label:"Avg Price", val: r => "₹" + (+r.avg_price).toFixed(2) },
+      { key:"updated_at",      label:"Updated",   val: r => r.updated_at ? new Date(r.updated_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—" },
+    ]);
+  } catch(e) { console.warn("Positions fetch failed:", e); }
+}
+
+// ---------------------------------------------------------------------------
+// Health — JSON → table
+// ---------------------------------------------------------------------------
+
+async function refreshHealth() {
+  try {
+    const rows = await fetch("/api/health").then(r => r.json());
+    _renderTable("health-body", rows, [
+      { key:"module",    label:"Module" },
+      { key:"last_seen", label:"Last Seen", val: r => new Date(r.last_seen).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) },
+      { key:"status",    label:"Status", cls: r => r.stale ? T.neg : T.pos, val: r => r.stale ? "STALE" : "OK" },
+    ]);
+  } catch(e) { console.warn("Health fetch failed:", e); }
+}
+
+// ---------------------------------------------------------------------------
+// Signals — JSON → table
+// ---------------------------------------------------------------------------
+
+const _STEP_COL = { SIGNAL_ACCEPTED: T.pos, SIGNAL_REJECTED: T.neg, SIGNAL_GENERATED: T.neutral };
+
+async function refreshSignals() {
+  try {
+    const qs = currentSession ? "?session_id=" + encodeURIComponent(currentSession) : "";
+    const rows = await fetch("/api/signals" + qs).then(r => r.json());
+    _renderTable("signals-body", rows, [
+      { key:"created_at", label:"Time",    val: r => r.created_at ? new Date(r.created_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—" },
+      { key:"symbol",     label:"Symbol" },
+      { key:"algo_name",  label:"Algo" },
+      { key:"step",       label:"Step",    cls: r => _STEP_COL[r.step] || "" },
+      { key:"context",    label:"Context", val: r => _ctxSummary(r.context) },
+    ]);
+  } catch(e) { console.warn("Signals fetch failed:", e); }
+}
+
+function _ctxSummary(ctx) {
+  if (!ctx) return "—";
+  if (typeof ctx === "string") try { ctx = JSON.parse(ctx); } catch(_) { return ctx.slice(0,60); }
+  if (ctx.reason) return ctx.reason;
+  if (ctx.qty != null) return "qty=" + ctx.qty;
+  return Object.entries(ctx).slice(0,3).map(([k,v]) => `${k}=${v}`).join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// Candlestick chart (ECharts)
+// ---------------------------------------------------------------------------
+
+let _candleChart = null;
+
+function initCandleChart() {
+  _candleChart = _ecInit("candle-chart");
+  _candleChart.setOption({
+    backgroundColor: T.bg,
+    grid: _GRID({ bottom:52 }),
+    tooltip: { trigger:"axis", ..._TT,
+      formatter: params => {
+        const d = params[0]; if (!d) return "";
+        const [o,c,l,h] = d.value;
+        const col = c >= o ? T.pos : T.neg;
+        return `<b>${d.name}</b><br/>O <span style="color:${col}">₹${(+o).toFixed(2)}</span> H <span style="color:${T.pos}">₹${(+h).toFixed(2)}</span><br/>L <span style="color:${T.neg}">₹${(+l).toFixed(2)}</span> C <span style="color:${col}">₹${(+c).toFixed(2)}</span>`;
+      }
+    },
+    xAxis: _AX_X({ boundaryGap:true, axisLabel:{ color:T.muted, fontSize:10, rotate:30 }, splitLine:{show:false} }),
+    yAxis: _AX_Y({ axisLabel:{ color:T.muted, fontSize:10, formatter: v => "₹"+v.toLocaleString("en-IN") } }),
+    series: [{ type:"candlestick", data:[], itemStyle:{ color:T.pos, color0:T.neg, borderColor:T.pos, borderColor0:T.neg } }],
+    dataZoom: [
+      { type:"inside" },
+      { type:"slider", height:20, bottom:4, borderColor:T.border, fillerColor:"rgba(99,102,241,0.15)", handleStyle:{color:T.accent}, textStyle:{color:T.muted,fontSize:10} },
+    ],
+  });
+}
+
+async function refreshCandles() {
+  if (!_candleChart) return;
+  try {
+    const symbol   = document.getElementById("candle-symbol").textContent.trim();
+    const interval = document.getElementById("candle-interval").value;
+    const data = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=200`).then(r => r.json());
+    const labels = data.map(d => new Date(d.ts).toLocaleString("en-IN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}));
+    _candleChart.setOption({ xAxis:{data:labels}, series:[{data:data.map(d=>[d.open,d.close,d.low,d.high])}] });
+  } catch(e) { console.warn("Candle fetch failed:", e); }
+}
+
+// ---------------------------------------------------------------------------
+// Tick price chart (ECharts)
+// ---------------------------------------------------------------------------
+
+let _tickChart = null;
 
 function initTickChart() {
-  const ctx = document.getElementById("tick-chart").getContext("2d");
-  tickChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: [],
-      datasets: [{
-        label: "Last Price",
-        data: [],
-        borderColor: "#6366f1",
-        backgroundColor: "rgba(99,102,241,0.06)",
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0,
-        fill: true,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => "₹ " + ctx.parsed.y.toFixed(2)
-          }
-        }
-      },
-      scales: {
-        x: {
-          ticks: { color: "#64748b", maxTicksLimit: 6, font: { size: 10 } },
-          grid: { color: "#1e2130" }
-        },
-        y: {
-          ticks: { color: "#64748b", font: { size: 10 }, callback: v => "₹" + v.toFixed(2) },
-          grid: { color: "#1e2130" }
-        }
-      }
-    }
+  _tickChart = _ecInit("tick-chart");
+  _tickChart.setOption({
+    backgroundColor: T.bg,
+    grid: _GRID(),
+    tooltip: { trigger:"axis", ..._TT, formatter: p => `${p[0].name}<br/>₹${(+p[0].value).toFixed(2)}` },
+    xAxis: _AX_X(),
+    yAxis: _AX_Y({ axisLabel:{ color:T.muted, fontSize:10, formatter: v => "₹"+v.toFixed(2) } }),
+    series: [{
+      type:"line", data:[], symbol:"none",
+      lineStyle:{ color:T.accent, width:1.5 },
+      areaStyle:{ color:{ type:"linear", x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:"rgba(99,102,241,0.18)"},{offset:1,color:"rgba(99,102,241,0)"}] } },
+    }],
   });
 }
 
 async function refreshTicks() {
-  if (!tickChart) return;
+  if (!_tickChart) return;
   try {
     const symbol = document.getElementById("tick-symbol").textContent.trim();
-    const res = await fetch(`/api/ticks?symbol=${encodeURIComponent(symbol)}&limit=500`);
-    const points = await res.json();
-    tickChart.data.labels = points.map(p => {
-      const d = new Date(p.ts);
-      return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const points = await fetch(`/api/ticks?symbol=${encodeURIComponent(symbol)}&limit=500`).then(r => r.json());
+    _tickChart.setOption({
+      xAxis:{ data: points.map(p => new Date(p.ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"})) },
+      series:[{ data: points.map(p => p.price) }],
     });
-    tickChart.data.datasets[0].data = points.map(p => p.price);
-    tickChart.update("none");
-  } catch (e) {
-    console.warn("Tick fetch failed:", e);
-  }
+  } catch(e) { console.warn("Tick fetch failed:", e); }
 }
 
 // ---------------------------------------------------------------------------
-// P&L chart (Chart.js)
+// P&L chart (ECharts)
 // ---------------------------------------------------------------------------
 
-let pnlChart = null;
+let _pnlChart = null;
+let _pnlPoints = [];
 
-function initChart() {
-  const ctx = document.getElementById("pnl-chart").getContext("2d");
-  pnlChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: [],
-      datasets: [{
-        label: "Cumulative P&L",
-        data: [],
-        borderColor: "#6366f1",
-        backgroundColor: "rgba(99,102,241,0.08)",
-        borderWidth: 2,
-        pointRadius: 2,
-        tension: 0.3,
-        fill: true,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const p = (ctx.chart._tradePoints || [])[ctx.dataIndex];
-              if (!p) return "₹ " + ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 });
-              const arrow = p.side === "BUY" ? "▲" : "▼";
-              return [
-                `${arrow} ${p.side} ${p.symbol} x${p.qty} @ ₹${p.price.toFixed(2)}`,
-                `Cumulative P&L: ₹${ctx.parsed.y.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
-              ];
-            }
-          }
-        }
+function initPnlChart() {
+  _pnlChart = _ecInit("pnl-chart");
+  _pnlChart.setOption({
+    backgroundColor: T.bg,
+    grid: _GRID(),
+    tooltip: { trigger:"axis", ..._TT,
+      formatter: p => {
+        const i = p[0].dataIndex; const pt = _pnlPoints[i];
+        const pnlStr = "₹" + (+p[0].value).toLocaleString("en-IN",{minimumFractionDigits:2});
+        if (!pt) return `${p[0].name}<br/>P&L ${pnlStr}`;
+        const arrow = pt.side === "BUY" ? "▲" : "▼";
+        return `${p[0].name}<br/>${arrow} ${pt.side} ${pt.symbol} ×${pt.qty} @ ₹${(+pt.price).toFixed(2)}<br/>Cumulative: ${pnlStr}`;
       },
-      scales: {
-        x: {
-          ticks: { color: "#64748b", maxTicksLimit: 8, font: { size: 10 } },
-          grid: { color: "#1e2130" }
-        },
-        y: {
-          ticks: {
-            color: "#64748b",
-            font: { size: 10 },
-            callback: v => "₹" + v.toLocaleString("en-IN")
-          },
-          grid: { color: "#1e2130" }
-        }
-      }
-    }
+    },
+    xAxis: _AX_X(),
+    yAxis: _AX_Y({ axisLabel:{ color:T.muted, fontSize:10, formatter: v => "₹"+v.toLocaleString("en-IN") } }),
+    series: [{
+      type:"line", data:[], symbol:"circle", symbolSize:6,
+      lineStyle:{ color:T.accent, width:2 },
+      itemStyle:{ color: p => _pnlPoints[p.dataIndex]?.side === "BUY" ? T.pos : T.neg },
+      areaStyle:{ color:{ type:"linear", x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:"rgba(99,102,241,0.15)"},{offset:1,color:"rgba(99,102,241,0)"}] } },
+    }],
   });
 }
 
 async function refreshPnl() {
-  if (!pnlChart) return;
+  if (!_pnlChart) return;
   try {
     const qs = currentSession ? "?session_id=" + encodeURIComponent(currentSession) : "";
-    const res = await fetch("/api/pnl" + qs);
-    const points = await res.json();
-
-    pnlChart.data.labels = points.map(p => {
-      const d = new Date(p.ts);
-      return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    _pnlPoints = await fetch("/api/pnl" + qs).then(r => r.json());
+    const last = _pnlPoints.length ? _pnlPoints[_pnlPoints.length-1].cumulative_pnl : 0;
+    _pnlChart.setOption({
+      xAxis:{ data: _pnlPoints.map(p => new Date(p.ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})) },
+      series:[{ data: _pnlPoints.map(p => p.cumulative_pnl), lineStyle:{ color: last >= 0 ? T.accent : T.neg } }],
     });
-    pnlChart.data.datasets[0].data = points.map(p => p.cumulative_pnl);
-
-    // Per-point marker colours: BUY=green dot, SELL=red dot
-    pnlChart.data.datasets[0].pointRadius = points.map(() => 6);
-    pnlChart.data.datasets[0].pointBackgroundColor = points.map(p =>
-      p.side === "BUY" ? "#22c55e" : "#ef4444"
-    );
-    pnlChart.data.datasets[0].pointBorderColor = points.map(p =>
-      p.side === "BUY" ? "#22c55e" : "#ef4444"
-    );
-
-    // Store raw points for tooltip access
-    pnlChart._tradePoints = points;
-
-    const last = points.length ? points[points.length - 1].cumulative_pnl : 0;
-    pnlChart.data.datasets[0].borderColor = last >= 0 ? "#6366f1" : "#ef4444";
-    pnlChart.update("none");
-  } catch (e) {
-    console.warn("P&L fetch failed:", e);
-  }
+  } catch(e) { console.warn("P&L fetch failed:", e); }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,35 +547,27 @@ let sse = null;
 
 function startSSE(sessionId) {
   if (sse) { sse.close(); sse = null; }
-
   const qs = sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "";
   sse = new EventSource("/api/decisions/stream" + qs);
 
-  const feed = document.getElementById("decision-feed");
+  const feed   = document.getElementById("decision-feed");
   const status = document.getElementById("feed-status");
+  const STEP_COL = { SIGNAL_ACCEPTED:"pos", SIGNAL_REJECTED:"neg", SIGNAL_GENERATED:"neutral" };
 
-  sse.onopen = () => { status.textContent = "live"; status.style.color = "var(--pos)"; };
+  sse.onopen  = () => { status.textContent = "live";          status.style.color = "var(--pos)"; };
   sse.onerror = () => { status.textContent = "reconnecting…"; status.style.color = "var(--neg)"; };
-
-  sse.onmessage = (e) => {
+  sse.onmessage = e => {
     const d = JSON.parse(e.data);
-    const ts = d.ts ? new Date(d.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
-    const stepClass = { SIGNAL_ACCEPTED: "pos", SIGNAL_REJECTED: "neg", SIGNAL_GENERATED: "neutral" }[d.step] || "";
+    const ts = d.ts ? new Date(d.ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "—";
+    const cls = STEP_COL[d.step] || "";
     const ctx = d.context || {};
-    const ctxStr = ctx.reason || (ctx.qty != null ? "qty=" + ctx.qty : Object.entries(ctx).slice(0, 2).map(([k,v]) => k+"="+v).join(" "));
-
+    const ctxStr = ctx.reason || (ctx.qty != null ? "qty="+ctx.qty : Object.entries(ctx).slice(0,2).map(([k,v])=>k+"="+v).join(" "));
     const entry = document.createElement("div");
     entry.className = "decision-entry";
     entry.innerHTML =
-      `<span class="ts">${ts}</span>` +
-      `<span class="sym">${d.symbol || "—"}</span>` +
-      `<span class="step ${stepClass}">${d.step}</span>` +
-      `<span class="ctx">${ctxStr}</span>`;
-
-    // prepend so newest is at top (feed is column-reverse)
+      `<span class="ts">${ts}</span><span class="sym">${d.symbol||"—"}</span>` +
+      `<span class="step ${cls}">${d.step}</span><span class="ctx">${ctxStr}</span>`;
     feed.insertBefore(entry, feed.firstChild);
-
-    // cap at 200 entries
     while (feed.children.length > 200) feed.removeChild(feed.lastChild);
   };
 }
@@ -529,12 +578,16 @@ function startSSE(sessionId) {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadSessions();
-  initTickChart();
-  refreshTicks();
-  setInterval(refreshTicks, 5_000);
-  initChart();
-  refreshPnl();
-  setInterval(refreshPnl, 30_000);
+
+  refreshAlgos();    setInterval(refreshAlgos,     5_000);
+  refreshPositions();setInterval(refreshPositions, 5_000);
+  refreshHealth();   setInterval(refreshHealth,    5_000);
+  refreshSignals();  setInterval(refreshSignals,  10_000);
+
+  initCandleChart(); refreshCandles(); setInterval(refreshCandles, 30_000);
+  initTickChart();   refreshTicks();   setInterval(refreshTicks,    5_000);
+  initPnlChart();    refreshPnl();     setInterval(refreshPnl,     30_000);
+
   startSSE("");
 });
 </script>
