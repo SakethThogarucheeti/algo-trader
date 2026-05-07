@@ -3,10 +3,10 @@ Zerodha login — automatic access-token refresh.
 
 Flow
 ----
-1. Start a tiny HTTP server on 127.0.0.1:8080.
+1. Start a tiny HTTP server on 127.0.0.1:<LOGIN_CALLBACK_PORT> (default 8080).
 2. Open the Kite login URL in the default browser.
 3. User logs in with their Zerodha credentials.
-4. Zerodha redirects to http://127.0.0.1:8080/?request_token=XXX&status=success
+4. Zerodha redirects to http://127.0.0.1:<port>/?request_token=XXX&status=success
 5. Server captures the request_token, exchanges it for an access_token.
 6. Writes ZERODHA_ACCESS_TOKEN to .env (creates the key if absent, updates if present).
 
@@ -19,7 +19,7 @@ Prerequisites
 In the Zerodha developer console (https://developers.kite.trade/apps),
 set the Redirect URL for your app to:
 
-    http://127.0.0.1:8080/
+    http://127.0.0.1:8080/   (or whatever LOGIN_CALLBACK_PORT is set to)
 
 The API key and secret are read from .env.
 """
@@ -59,7 +59,10 @@ if not API_KEY or not API_SECRET:
     sys.exit("ERROR: ZERODHA_API_KEY and ZERODHA_API_SECRET must be set in .env")
 
 _CALLBACK_HOST = "127.0.0.1"
-_CALLBACK_PORT = 8080
+
+def _callback_port() -> int:
+    from trading.config.settings import get_settings
+    return get_settings().login_callback_port
 
 # Shared result — set by the HTTP handler, read by main thread
 _request_token: str | None = None
@@ -80,20 +83,29 @@ class _CallbackHandler(BaseHTTPRequestHandler):
 
         if status == "success" and token:
             _request_token = token
+            _server_error = None  # clear any stale error from earlier redirects
             body = b"<h2>Login successful! You can close this tab.</h2>"
             self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            threading.Thread(target=self.server.shutdown).start()
+        elif parsed.path in ("/favicon.ico",):
+            # Ignore browser probes — don't log or respond with an error page
+            self.send_response(204)
+            self.end_headers()
         else:
+            # A real Zerodha error redirect — log it but keep listening so the
+            # user can retry without restarting the script.
             _server_error = params.get("message", ["Unknown error"])[0]
-            body = f"<h2>Login failed: {_server_error}</h2>".encode()
+            print(f"\nZerodha returned an error: {_server_error} — please try logging in again.")
+            body = f"<h2>Login failed: {_server_error} — go back and try again.</h2>".encode()
             self.send_response(400)
-
-        self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-        # Shut the server down from inside the handler (non-blocking)
-        threading.Thread(target=self.server.shutdown).start()
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
     def log_message(self, fmt: str, *args: object) -> None:
         # Suppress default access log noise
@@ -132,15 +144,16 @@ def _exchange_and_save(client: object, request_token: str) -> None:
 def main() -> None:
     from trading.broker.zerodha.kite_client import KiteClient
 
+    port = _callback_port()
     client = KiteClient(API_KEY)
     login_url = client.login_url()
 
     # Try to bind the callback server — fail fast if the port is occupied.
     try:
-        server = HTTPServer((_CALLBACK_HOST, _CALLBACK_PORT), _CallbackHandler)
+        server = HTTPServer((_CALLBACK_HOST, port), _CallbackHandler)
     except OSError:
-        print(f"\nERROR: port {_CALLBACK_PORT} is already in use.")
-        print("Stop the process holding it (e.g. the trading bot) and rerun this script.")
+        print(f"\nERROR: port {port} is already in use.")
+        print("Stop the process holding it or set LOGIN_CALLBACK_PORT in .env to a free port.")
         print("\nAlternatively, open the login URL manually, complete login, then paste")
         print("the full redirect URL (or just the request_token) below when prompted.")
         print(f"\nLogin URL:\n  {login_url}\n")
@@ -157,14 +170,14 @@ def main() -> None:
         _exchange_and_save(client, request_token)
         return
 
-    print("Starting local callback server on http://127.0.0.1:8080/ …")
+    print(f"Starting local callback server on http://127.0.0.1:{port}/ …")
     print(f"\nOpening browser to Zerodha login:\n  {login_url}\n")
     webbrowser.open(login_url)
 
     print("Waiting for Zerodha redirect (log in with your credentials) …")
     server.serve_forever()  # blocks until _CallbackHandler shuts it down
 
-    if _server_error or not _request_token:
+    if not _request_token:
         sys.exit(f"ERROR: Login failed — {_server_error or 'no request_token received'}")
 
     _exchange_and_save(client, _request_token)  # type: ignore[arg-type]

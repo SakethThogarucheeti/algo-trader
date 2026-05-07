@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
+
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 import polars as pl
 
@@ -73,17 +75,23 @@ class ZerodhaBroker(Broker):
     ) -> pl.DataFrame:
         token: int = self._get_token(symbol)
 
+        # Kite historical_data expects naive IST datetimes; convert if UTC-aware.
+        def _to_naive_ist(dt: datetime) -> datetime:
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(_IST)
+            return dt.replace(tzinfo=None)
+
         raw = self.client.historical_data(
             token,
-            start,
-            end,
+            _to_naive_ist(start),
+            _to_naive_ist(end),
             _INTERVAL_MAP.get(interval, interval),
         )
 
         df: pl.DataFrame = pl.DataFrame(raw)
 
         if df.is_empty():
-            raise ValueError("No data returned")
+            return df
 
         # Ensure date column is cast to UTC Datetime (Kite returns Python datetimes)
         if df["date"].dtype != pl.Datetime("us", "UTC"):

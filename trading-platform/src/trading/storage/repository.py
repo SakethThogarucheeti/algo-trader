@@ -6,12 +6,14 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trading.core.models import (
     AlgoConfig,
     AlgoState,
     AuditLog,
+    Candle,
     DecisionLog,
     Heartbeat,
     Instrument,
@@ -28,6 +30,19 @@ class NotFoundError(Exception):
     """Raised when a required DB row is absent."""
 
 
+def _candle_to_dict(c: Candle) -> dict:
+    return {
+        "symbol": c.symbol,
+        "interval": c.interval,
+        "ts": c.ts,
+        "open": float(c.open),
+        "high": float(c.high),
+        "low": float(c.low),
+        "close": float(c.close),
+        "volume": c.volume,
+    }
+
+
 class Repository(AbstractRepository):
     """
     The only layer that touches the database.
@@ -39,6 +54,68 @@ class Repository(AbstractRepository):
     ``update_position`` must always be called inside an existing transaction
     because it uses SELECT FOR UPDATE and must be atomic with other writes.
     """
+
+    # ------------------------------------------------------------------
+    # Candles
+    # ------------------------------------------------------------------
+
+    async def save_candles(self, session: AsyncSession, rows: list[dict]) -> None:
+        if not rows:
+            return
+        stmt = (
+            insert(Candle)
+            .values(
+                [
+                    {
+                        "symbol": r["symbol"],
+                        "interval": r["interval"],
+                        "ts": r["ts"],
+                        "open": Decimal(str(r["open"])),
+                        "high": Decimal(str(r["high"])),
+                        "low": Decimal(str(r["low"])),
+                        "close": Decimal(str(r["close"])),
+                        "volume": int(r["volume"]),
+                    }
+                    for r in rows
+                ]
+            )
+            .on_conflict_do_nothing(constraint="uq_candle_symbol_interval_ts")
+        )
+        await session.execute(stmt)
+
+    async def get_candles(
+        self,
+        session: AsyncSession,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict]:
+        result = await session.execute(
+            select(Candle)
+            .where(Candle.symbol == symbol, Candle.interval == interval)
+            .order_by(Candle.ts.desc())
+            .limit(limit)
+        )
+        rows = list(reversed(result.scalars().all()))
+        return [_candle_to_dict(c) for c in rows]
+
+    async def get_candles_since(
+        self,
+        session: AsyncSession,
+        symbol: str,
+        interval: str,
+        since: datetime,
+    ) -> list[dict]:
+        result = await session.execute(
+            select(Candle)
+            .where(
+                Candle.symbol == symbol,
+                Candle.interval == interval,
+                Candle.ts >= since,
+            )
+            .order_by(Candle.ts.asc())
+        )
+        return [_candle_to_dict(c) for c in result.scalars().all()]
 
     # ------------------------------------------------------------------
     # Instruments

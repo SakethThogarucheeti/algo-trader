@@ -160,7 +160,12 @@ def _fetch_symbol(
         log.warning("  %s/%s — no new data returned", symbol, interval)
         return
 
-    new_data = pl.concat(all_frames).unique(subset=["date"]).sort("date")
+    _FLOAT_COLS = ["open", "high", "low", "close"]
+    cast_frames = [
+        f.with_columns([pl.col(c).cast(pl.Float64) for c in _FLOAT_COLS if c in f.columns])
+        for f in all_frames
+    ]
+    new_data = pl.concat(cast_frames).unique(subset=["date"]).sort("date")
     _append_or_create(path, new_data)
     log.info("  %s/%s — saved %d rows to %s", symbol, interval, len(new_data), path)
 
@@ -189,8 +194,8 @@ def _symbols_from_db() -> list[str]:
 
 
 def _build_broker() -> object:
-    from trading.broker.zerodha.kite_client import KiteClient
     from trading.broker.zerodha.broker import ZerodhaBroker
+    from trading.broker.zerodha.kite_client import KiteClient
 
     api_key = os.environ.get("ZERODHA_API_KEY", "")
     access_token = os.environ.get("ZERODHA_ACCESS_TOKEN", "")

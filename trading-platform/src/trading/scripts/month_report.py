@@ -11,7 +11,6 @@ Usage
 from __future__ import annotations
 
 import asyncio
-import calendar
 import sys
 from datetime import UTC, date, datetime
 
@@ -20,8 +19,6 @@ from trading.reports.engine import run_report
 
 def _month_window(for_date: date) -> tuple[datetime, datetime]:
     first = date(for_date.year, for_date.month, 1)
-    last_day = calendar.monthrange(for_date.year, for_date.month)[1]
-    after_last = date(for_date.year, for_date.month, last_day)
     # end is exclusive: midnight of first day of next month
     if for_date.month == 12:
         next_first = date(for_date.year + 1, 1, 1)

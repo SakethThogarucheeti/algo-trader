@@ -29,7 +29,6 @@ class AlgoSettings(BaseModel):
     broker_name: str = "zerodha"  # "zerodha" | "paper"
     strategy_id: str = "ema_crossover"  # registered strategy identifier
     risk_controller_id: str = "default"  # registered risk controller identifier
-    feature_engine_id: str = "technical"  # registered feature engine identifier
     execution_engine_id: str = "direct"  # registered execution engine identifier
     candle_intervals: list[str] | None = None  # None → use global Settings.candle_intervals
     equity: float = 100_000.0  # capital allocated for risk sizing
@@ -96,6 +95,11 @@ class Settings(BaseSettings):
     dashboard_enabled: bool = True
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = 8081
+
+    # ------------------------------------------------------------------ #
+    # Login callback server                                               #
+    # ------------------------------------------------------------------ #
+    login_callback_port: int = 8080
 
     model_config = SettingsConfigDict(
         env_file=".env",

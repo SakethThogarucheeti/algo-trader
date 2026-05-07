@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,50 @@ class AbstractRepository(ABC):
     Concrete implementations decide the backing store — production uses
     SQLAlchemy / Postgres; tests can swap in an in-memory stub.
     """
+
+    # ------------------------------------------------------------------
+    # Candles
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def save_candles(
+        self,
+        session: AsyncSession,
+        rows: list[dict],
+    ) -> None:
+        """
+        Bulk-insert candle rows. Keys per dict: symbol, interval, ts, open,
+        high, low, close, volume. Ignores conflicts on (symbol, interval, ts)
+        so repeated calls are idempotent.
+        """
+
+    @abstractmethod
+    async def get_candles(
+        self,
+        session: AsyncSession,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict]:
+        """
+        Return the last *limit* candles for (symbol, interval), ordered
+        ts ASC (oldest first, newest last). Each dict has the same keys
+        as the rows accepted by save_candles.
+        """
+
+    @abstractmethod
+    async def get_candles_since(
+        self,
+        session: AsyncSession,
+        symbol: str,
+        interval: str,
+        since: datetime,
+    ) -> list[dict]:
+        """
+        Return all candles for (symbol, interval) with ts >= *since*,
+        ordered ts ASC. Used by session-VWAP which needs bars from the
+        current trading-day open onward.
+        """
 
     # ------------------------------------------------------------------
     # Instruments

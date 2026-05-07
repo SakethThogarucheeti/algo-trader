@@ -36,7 +36,8 @@ def main() -> None:
 
     start, end = _week_window(for_date)
     week_num = start.isocalendar()[1]
-    title = f"WEEK REVIEW — Week {week_num}, {start.strftime('%d %b')}–{(end - timedelta(days=1)).strftime('%d %b %Y')}"
+    end_str = (end - timedelta(days=1)).strftime('%d %b %Y')
+    title = f"WEEK REVIEW — Week {week_num}, {start.strftime('%d %b')}–{end_str}"
 
     asyncio.run(run_report(start, end, title))
 
