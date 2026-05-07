@@ -4,12 +4,38 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class Candle(Base):
+    """
+    Persisted OHLCV bar — one row per (symbol, interval, bar-close timestamp).
+
+    Populated by CandleRegistry on warmup and on every bar close. Used by the
+    indicator library to compute values without holding an in-memory window.
+    """
+
+    __tablename__ = "candles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    interval: Mapped[str] = mapped_column(String)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    open: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    high: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    low: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    close: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    volume: Mapped[int]
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "interval", "ts", name="uq_candle_symbol_interval_ts"),
+        Index("ix_candle_symbol_interval_ts", "symbol", "interval", "ts"),
+    )
 
 
 class Instrument(Base):

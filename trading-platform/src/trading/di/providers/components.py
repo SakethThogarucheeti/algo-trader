@@ -9,6 +9,7 @@ from trading.broker.base.broker import Broker
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.paper_broker import AbstractPriceStore
 from trading.config.settings import AlgoSettings, Settings
+from trading.di.providers.strategy import make_strategy
 from trading.engine.algo_runner import AlgoRunner
 from trading.engine.candle_aggregator import CandleAggregator
 from trading.engine.component import Component
@@ -17,13 +18,13 @@ from trading.engine.kite_ingestor import KiteIngestor, OnTickCallback
 from trading.engine.runtime import AbstractRuntime, Runtime
 from trading.engine.scheduler import Scheduler
 from trading.execution.executor import OrderExecutor
+from trading.indicators.context import IndicatorContext
+from trading.indicators.polars_store import PolarsStore
 from trading.registry.algo import AlgoConfig, AlgoRegistry, _AlgoInstance
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
 from trading.registry.tick import TickConfig, TickRegistry
-from trading.di.providers.features import make_feature_engine
-from trading.di.providers.strategy import make_strategy
 from trading.risk.base import RiskController
 from trading.storage.base import AbstractRepository
 
@@ -42,6 +43,7 @@ class ComponentProvider(Provider):
         settings: Settings,
     ) -> TickRegistry:
         from sqlalchemy import select
+
         from trading.core.models import Instrument
 
         async with sf() as session:
@@ -66,6 +68,7 @@ class ComponentProvider(Provider):
         settings: Settings,
     ) -> CandleRegistry:
         from sqlalchemy import select
+
         from trading.core.models import Instrument
 
         async with sf() as session:
@@ -117,6 +120,7 @@ class ComponentProvider(Provider):
         sf: async_sessionmaker[AsyncSession],
     ) -> AbstractRuntime:
         from sqlalchemy import select
+
         from trading.core.models import Instrument
         from trading.core.schemas import InstrumentType, TickEvent
 
@@ -146,6 +150,9 @@ class ComponentProvider(Provider):
 
         paper_price_store = price_store if settings.paper_trading else None
 
+        # Shared in-memory store + IndicatorContext (one per algo, wired below)
+        polars_store = PolarsStore()
+
         algo_runners: list[Component] = []
         risk_controllers: list[Component] = []
         order_executors: list[Component] = []
@@ -165,18 +172,20 @@ class ComponentProvider(Provider):
             algo_instances: dict[str, _AlgoInstance] = {
                 s: _AlgoInstance(
                     strategy=make_strategy(algo.strategy_id),
-                    feature_engine=make_feature_engine(algo.feature_engine_id),
                     instrument_type=InstrumentType(
                         instrument_type_map.get(s, InstrumentType.EQUITY.value)
                     ),
                 )
                 for s in algo.instruments
             }
+            indicator_ctx = IndicatorContext(polars_store)
             algo_reg = AlgoRegistry(
                 config=AlgoConfig(
                     instrument_strategy_map={s: algo.strategy_id for s in algo.instruments},
-                    instrument_feature_map={s: algo.feature_engine_id for s in algo.instruments},
-                    instrument_types={s: instrument_type_map.get(s, InstrumentType.EQUITY.value) for s in algo.instruments},
+                    instrument_types={
+                        s: instrument_type_map.get(s, InstrumentType.EQUITY.value)
+                        for s in algo.instruments
+                    },
                     equity=algo.equity,
                     warmup_candles=settings.warmup_candles,
                     algo_name=algo.name,
@@ -184,7 +193,9 @@ class ComponentProvider(Provider):
                 session_factory=sf,
                 repo=repo,
                 algos=algo_instances,
+                store=polars_store,
             )
+            algo_reg.set_indicator_context(indicator_ctx)
 
             risk_reg = RiskRegistry(
                 config=RiskConfig(

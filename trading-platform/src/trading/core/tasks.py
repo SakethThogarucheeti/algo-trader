@@ -6,7 +6,7 @@ import logging
 _log = logging.getLogger(__name__)
 
 
-def fire(coro: "asyncio.Coroutine[object, object, object]") -> "asyncio.Task[object]":
+def fire(coro: asyncio.Coroutine[object, object, object]) -> asyncio.Task[object]:
     """
     Schedule a coroutine as a background task and log any unhandled exception.
 
@@ -18,6 +18,6 @@ def fire(coro: "asyncio.Coroutine[object, object, object]") -> "asyncio.Task[obj
     return task
 
 
-def _on_done(task: "asyncio.Task[object]") -> None:
+def _on_done(task: asyncio.Task[object]) -> None:
     if not task.cancelled() and (exc := task.exception()):
         _log.error("background task failed: %s", exc, exc_info=exc)
