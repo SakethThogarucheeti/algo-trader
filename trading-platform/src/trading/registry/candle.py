@@ -21,6 +21,11 @@ _INTERVAL_MINUTES: dict[str, int] = {
     "15min": 15, "30min": 30, "60min": 60,
 }
 
+# NSE trades ~375 min/day (9:15–15:30); 5 trading days per 7 calendar days.
+# Multiply trading-time lookback by this factor to get a calendar-time window
+# that reliably contains enough bars across weekends and market holidays.
+_CALENDAR_MINUTES_PER_TRADING_MINUTE = (7 / 5) * (1440 / 375)  # ≈ 5.4
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -131,7 +136,11 @@ class CandleRegistry(AbstractRegistry):
         max_minutes = max(
             (_INTERVAL_MINUTES.get(iv, 1) for iv in self._config.intervals), default=1
         )
-        lookback_hours = (self._config.warmup_count * max_minutes) // 60 + 24
+        # Convert trading-time lookback to calendar time: account for non-trading
+        # hours and weekends so we always fetch enough historical bars.
+        trading_minutes_needed = self._config.warmup_count * max_minutes
+        calendar_minutes = trading_minutes_needed * _CALENDAR_MINUTES_PER_TRADING_MINUTE
+        lookback_hours = int(calendar_minutes / 60) + 24  # +24h buffer for holidays
         start = now - timedelta(hours=lookback_hours)
 
         for sc in self._symbols:
@@ -145,8 +154,10 @@ class CandleRegistry(AbstractRegistry):
                     continue
                 if df.is_empty():
                     continue
+                warmup_rows: list[dict] = []
                 for row in df.tail(self._config.warmup_count).iter_rows(named=True):
                     try:
+                        ts = _ensure_utc(row["date"])
                         events.append(CandleEvent(
                             symbol=sc.symbol,
                             instrument_type=sc.instrument_type,
@@ -156,12 +167,32 @@ class CandleRegistry(AbstractRegistry):
                             low=float(row["low"]),
                             close=float(row["close"]),
                             volume=int(row.get("volume", 0)),
-                            timestamp=_ensure_utc(row["date"]),
+                            timestamp=ts,
                             tick_log_id=0,
                         ))
+                        warmup_rows.append({
+                            "symbol": sc.symbol,
+                            "interval": interval,
+                            "ts": ts,
+                            "open": float(row["open"]),
+                            "high": float(row["high"]),
+                            "low": float(row["low"]),
+                            "close": float(row["close"]),
+                            "volume": int(row.get("volume", 0)),
+                        })
                     except Exception as exc:
                         logger.warning(
                             "CandleRegistry: invalid warmup row %s %s — %s",
+                            sc.symbol, interval, exc,
+                        )
+                if warmup_rows:
+                    try:
+                        async with self._session_factory() as session:
+                            async with session.begin():
+                                await self._repo.save_candles(session, warmup_rows)
+                    except Exception as exc:
+                        logger.warning(
+                            "CandleRegistry: warmup candle persist failed for %s %s — %s",
                             sc.symbol, interval, exc,
                         )
         logger.info("CandleRegistry: warmup produced %d candles", len(events))
@@ -230,26 +261,35 @@ class CandleRegistry(AbstractRegistry):
         )
 
     async def _log_candle(self, event: CandleEvent) -> None:
-        if event.tick_log_id == 0:
-            return
         try:
             async with self._session_factory() as session:
                 async with session.begin():
-                    await self._repo.log_decision(
-                        session,
-                        step="CANDLE_EMITTED",
-                        symbol=event.symbol,
-                        tick_log_id=event.tick_log_id,
-                        context={
-                            "interval": event.interval,
-                            "open": event.open, "high": event.high,
-                            "low": event.low, "close": event.close,
-                            "volume": event.volume,
-                            "candle_ts": event.timestamp.isoformat(),
-                        },
-                    )
+                    await self._repo.save_candles(session, [{
+                        "symbol": event.symbol,
+                        "interval": event.interval,
+                        "ts": event.timestamp,
+                        "open": event.open,
+                        "high": event.high,
+                        "low": event.low,
+                        "close": event.close,
+                        "volume": event.volume,
+                    }])
+                    if event.tick_log_id != 0:
+                        await self._repo.log_decision(
+                            session,
+                            step="CANDLE_EMITTED",
+                            symbol=event.symbol,
+                            tick_log_id=event.tick_log_id,
+                            context={
+                                "interval": event.interval,
+                                "open": event.open, "high": event.high,
+                                "low": event.low, "close": event.close,
+                                "volume": event.volume,
+                                "candle_ts": event.timestamp.isoformat(),
+                            },
+                        )
         except Exception:
             logger.warning(
-                "CandleRegistry: decision log failed for %s %s — audit trail gap",
+                "CandleRegistry: candle persist/log failed for %s %s — audit trail gap",
                 event.symbol, event.interval,
             )

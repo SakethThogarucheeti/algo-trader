@@ -6,7 +6,6 @@ from decimal import Decimal
 from uuid import uuid4
 
 from pydantic import BaseModel
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.broker.base.broker import Broker
@@ -15,7 +14,6 @@ from trading.core.messaging import AbstractRegistry
 from trading.core.models import Order
 from trading.core.schemas import (
     FillEvent,
-    OrderEvent,
     OrderStatus,
     Side,
     ValidatedOrderEvent,
@@ -141,7 +139,9 @@ class ExecRegistry(AbstractRegistry):
                         session, kite_order_id, OrderStatus.FILLED, avg_price
                     )
                 except NotFoundError:
-                    logger.warning("ExecRegistry: fill for unknown order %s — skipping", kite_order_id)
+                    logger.warning(
+                        "ExecRegistry: fill for unknown order %s — skipping", kite_order_id
+                    )
                     return
                 await self._repo.update_position(
                     session, fill, Side(side), symbol, instrument_type

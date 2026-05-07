@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.core.clock import Clock, SystemClock
 from trading.core.messaging import AbstractRegistry
-from trading.core.tasks import fire
 from trading.core.schemas import (
     OrderType,
     Side,
@@ -15,7 +14,7 @@ from trading.core.schemas import (
     SignalType,
     ValidatedOrderEvent,
 )
-from trading.core.clock import Clock, SystemClock
+from trading.core.tasks import fire
 from trading.registry.tick import CircuitBreaker
 from trading.risk.sizer import calculate_quantity
 from trading.storage.base import AbstractRepository
@@ -95,7 +94,7 @@ class RiskRegistry(AbstractRegistry):
                 if not self._config.paper_trading:
                     pnl = await self._repo.get_daily_realized_pnl(session, today)
                     limit = self._config.equity * self._config.max_daily_loss_pct / 100.0
-                    if abs(pnl) >= limit:
+                    if abs(pnl) > limit:
                         await self._reject(event, _DAILY_LOSS_LIMIT)
                         return None
 
@@ -136,7 +135,8 @@ class RiskRegistry(AbstractRegistry):
                     await self._repo.save_signal(session, event)
         except Exception:
             logger.warning(
-                "RiskRegistry: failed to persist signal %s — order will proceed but audit incomplete",
+                "RiskRegistry: failed to persist signal %s"
+                " — order will proceed but audit incomplete",
                 event.signal_id,
             )
 
