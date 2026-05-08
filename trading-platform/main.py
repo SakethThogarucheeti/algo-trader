@@ -124,9 +124,11 @@ async def _main() -> None:
         scheduler.start()
         logger.info("Scheduler started.")
 
+        runtime_task: asyncio.Task[None] | None = None
+
         if _is_market_hours():
             logger.info("Market is currently open — starting runtime immediately.")
-            asyncio.get_event_loop().create_task(runtime.start())
+            runtime_task = asyncio.get_event_loop().create_task(runtime.start())
         else:
             logger.info("Outside market hours — waiting for next 09:15 IST trigger.")
 
@@ -135,6 +137,9 @@ async def _main() -> None:
         finally:
             scheduler.stop()
             logger.info("Scheduler stopped.")
+            runtime.stop()
+            if runtime_task is not None and not runtime_task.done():
+                await runtime_task
 
 
 if __name__ == "__main__":

@@ -231,7 +231,7 @@ class ComponentProvider(Provider):
                         warmup_candles=settings.warmup_candles,
                         candle_intervals=intervals,
                         equity=algo.equity,
-                        params=strategy.get_state(),
+                        params=strategy.get_params(),
                     )
 
             # Wire warmup replay: CandleAggregator feeds historical candles into algo_reg
