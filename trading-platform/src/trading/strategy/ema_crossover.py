@@ -45,6 +45,11 @@ class EmaCrossoverStrategy(Strategy):
         self._inds: dict[str, tuple[EMA, EMA, ATR]] = {}
         self._prev_fast: dict[str, float | None] = {}
         self._prev_slow: dict[str, float | None] = {}
+        # last computed values for dashboard state
+        self._last_fast: float | None = None
+        self._last_slow: float | None = None
+        self._last_atr: float | None = None
+        self._last_close: float | None = None
 
     def set_store(self, store: Any) -> None:
         self._store = store
@@ -59,8 +64,21 @@ class EmaCrossoverStrategy(Strategy):
             )
         return self._inds[symbol]
 
+    def get_params(self) -> dict[str, object]:
+        return {
+            "fast": self._fast_period,
+            "slow": self._slow_period,
+            "atr_period": self._atr_period,
+            "atr_multiplier": self._atr_multiplier,
+        }
+
     def get_state(self) -> dict[str, object]:
-        return {}
+        return {
+            f"ema_{self._fast_period}": round(self._last_fast, 4) if self._last_fast is not None else None,
+            f"ema_{self._slow_period}": round(self._last_slow, 4) if self._last_slow is not None else None,
+            f"atr_{self._atr_period}":  round(self._last_atr,  4) if self._last_atr  is not None else None,
+            "last_close":               round(self._last_close, 2) if self._last_close is not None else None,
+        }
 
     async def on_candle(
         self,
@@ -76,6 +94,15 @@ class EmaCrossoverStrategy(Strategy):
         fast = await fast_ind.compute(fast_params)
         slow = await slow_ind.compute(slow_params)
         atr = await atr_ind.compute(atr_params)
+
+        self._last_fast = fast
+        self._last_slow = slow
+        self._last_atr = atr
+        self._last_close = candle.close
+
+        self.chart("price", f"ema_{self._fast_period}", fast, candle.timestamp)
+        self.chart("price", f"ema_{self._slow_period}", slow, candle.timestamp)
+        self.chart("oscillators", f"atr_{self._atr_period}", atr, candle.timestamp)
 
         if fast is None or slow is None or atr is None or atr <= 0:
             self._prev_fast[symbol] = fast

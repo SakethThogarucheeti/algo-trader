@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -24,6 +25,7 @@ class AlgoConfig(BaseModel):
     warmup_candles: int = Field(default=200, gt=0)
     algo_name: str = "default"
     instrument_types: dict[str, str] = Field(default_factory=dict)
+    session_id: str | None = None
 
 
 @dataclass
@@ -67,6 +69,31 @@ class AlgoRegistry(AbstractRegistry):
     def set_indicator_context(self, context: IndicatorContext) -> None:
         self._indicator_context = context
 
+    def _make_chart_cb(self, symbol: str, interval: str) -> Callable[[str, str, float, datetime], None]:
+        def _cb(chart: str, series: str, value: float, ts: datetime) -> None:
+            fire(self._log_chart(chart, series, value, ts, symbol, interval))
+        return _cb
+
+    async def _log_chart(
+        self, chart: str, series: str, value: float, ts: datetime, symbol: str, interval: str
+    ) -> None:
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    await self._repo.log_indicator(
+                        session,
+                        algo_name=self._config.algo_name,
+                        symbol=symbol,
+                        interval=interval,
+                        chart=chart,
+                        series=series,
+                        ts=ts,
+                        value=value,
+                        session_id=self._config.session_id,
+                    )
+        except Exception:
+            logger.debug("AlgoRegistry: indicator log failed for %s/%s", chart, series)
+
     async def handle(self, candle: CandleEvent) -> list[SignalEvent]:
         instance = self._algos.get(candle.symbol)
         if instance is None:
@@ -92,11 +119,14 @@ class AlgoRegistry(AbstractRegistry):
 
         # Provide store to strategy (no-op if already set — strategies cache it)
         instance.strategy.set_store(self._indicator_context.get_store())
+        instance.strategy.set_chart_callback(self._make_chart_cb(candle.symbol, candle.interval))
 
         signal = await instance.strategy.on_candle(candle.symbol, instance.instrument_type, candle)
 
-        if signal is not None:
+        if instance.bars_seen >= self._config.warmup_candles:
             instance.warmed_up = True
+
+        if signal is not None:
             instance.last_signal_at = datetime.now(UTC).isoformat()
 
         fire(self._upsert_state(instance))
@@ -125,7 +155,7 @@ class AlgoRegistry(AbstractRegistry):
         return [signal_event]
 
     async def _upsert_state(self, instance: _AlgoInstance) -> None:
-        warmup_complete = instance.warmed_up or instance.bars_seen >= self._config.warmup_candles
+        warmup_complete = instance.warmed_up
         state: dict[str, object] = {
             "bars_seen": instance.bars_seen,
             "warmup_candles": self._config.warmup_candles,

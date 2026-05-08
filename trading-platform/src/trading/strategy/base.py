@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -46,6 +47,28 @@ class Strategy(ABC):
     no network I/O. Side effects belong in the registry layer.
     """
 
+    _chart_cb: Callable[[str, str, float, datetime], None] | None = None
+
+    def set_chart_callback(self, cb: Callable[[str, str, float, datetime], None]) -> None:
+        """Injected by AlgoRegistry. Strategies call self.chart() to push indicator values."""
+        self._chart_cb = cb
+
+    def chart(
+        self,
+        chart_name: str,
+        series_name: str,
+        value: float | None,
+        ts: datetime | None = None,
+    ) -> None:
+        """
+        Push an indicator value to the named chart/series.
+
+        Fire-and-forget: the callback schedules a background DB write with no
+        added latency on the hot path. None values are silently dropped (warmup).
+        """
+        if self._chart_cb is not None and value is not None:
+            self._chart_cb(chart_name, series_name, value, ts or datetime.now(UTC))
+
     @property
     def id(self) -> str:
         """Alias of this strategy instance (delegates to the class attribute)."""
@@ -59,6 +82,10 @@ class Strategy(ABC):
         instances using the provided store. Default implementation is a no-op for
         strategies that don't use indicators.
         """
+
+    def get_params(self) -> dict[str, object]:
+        """Return static strategy configuration (periods, thresholds, etc.)."""
+        return {}
 
     def get_state(self) -> dict[str, object]:
         """
