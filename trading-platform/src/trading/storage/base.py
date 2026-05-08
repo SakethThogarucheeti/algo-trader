@@ -205,6 +205,50 @@ class AbstractRepository(ABC):
     # Decision logging
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Indicator charting
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def log_indicator(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        symbol: str,
+        interval: str,
+        chart: str,
+        series: str,
+        ts: datetime,
+        value: float,
+        session_id: str | None = None,
+    ) -> None:
+        """Record one indicator data point for a strategy chart series."""
+
+    @abstractmethod
+    async def get_chart_names(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        since: datetime,
+        session_id: str | None = None,
+    ) -> list[str]:
+        """Return distinct chart names that have data for *algo_name* since *since*."""
+
+    @abstractmethod
+    async def get_indicator_series(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        chart: str,
+        since: datetime,
+        session_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, list[dict]]:
+        """
+        Return all series for *chart* as {series_name: [{"ts": iso_str, "value": float}, ...]}.
+        Points are ordered ts ASC, capped at *limit*.
+        """
+
     @abstractmethod
     async def log_decision(
         self,

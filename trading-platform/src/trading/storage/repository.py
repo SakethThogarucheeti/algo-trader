@@ -16,6 +16,7 @@ from trading.core.models import (
     Candle,
     DecisionLog,
     Heartbeat,
+    IndicatorLog,
     Instrument,
     Order,
     Position,
@@ -392,6 +393,8 @@ class Repository(AbstractRepository):
                     params=json.dumps(params),
                 )
             )
+        else:
+            existing.params = json.dumps(params)
 
     async def upsert_algo_state(
         self,
@@ -428,6 +431,80 @@ class Repository(AbstractRepository):
                     "updated_at": state_obj.updated_at.isoformat() if state_obj else None,
                 }
             )
+        return out
+
+    # ------------------------------------------------------------------
+    # Indicator charting
+    # ------------------------------------------------------------------
+
+    async def log_indicator(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        symbol: str,
+        interval: str,
+        chart: str,
+        series: str,
+        ts: datetime,
+        value: float,
+        session_id: str | None = None,
+    ) -> None:
+        session.add(IndicatorLog(
+            algo_name=algo_name,
+            session_id=session_id,
+            symbol=symbol,
+            interval=interval,
+            chart=chart,
+            series=series,
+            ts=ts,
+            value=value,
+        ))
+
+    async def get_chart_names(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        since: datetime,
+        session_id: str | None = None,
+    ) -> list[str]:
+        stmt = (
+            select(IndicatorLog.chart)
+            .distinct()
+            .where(
+                IndicatorLog.algo_name == algo_name,
+                IndicatorLog.ts >= since,
+                IndicatorLog.session_id.is_(None) if session_id is None
+                else IndicatorLog.session_id == session_id,
+            )
+        )
+        result = await session.execute(stmt)
+        return [r[0] for r in result.fetchall()]
+
+    async def get_indicator_series(
+        self,
+        session: AsyncSession,
+        algo_name: str,
+        chart: str,
+        since: datetime,
+        session_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, list[dict]]:
+        stmt = (
+            select(IndicatorLog)
+            .where(
+                IndicatorLog.algo_name == algo_name,
+                IndicatorLog.chart == chart,
+                IndicatorLog.ts >= since,
+                IndicatorLog.session_id.is_(None) if session_id is None
+                else IndicatorLog.session_id == session_id,
+            )
+            .order_by(IndicatorLog.ts.asc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        out: dict[str, list[dict]] = {}
+        for row in result.scalars().all():
+            out.setdefault(row.series, []).append({"ts": row.ts.isoformat(), "value": row.value})
         return out
 
     # ------------------------------------------------------------------

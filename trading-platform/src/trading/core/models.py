@@ -187,6 +187,28 @@ class AlgoState(Base):
     config: Mapped[AlgoConfig] = relationship("AlgoConfig", back_populates="state")
 
 
+class IndicatorLog(Base):
+    """
+    Per-bar indicator values pushed by strategies via Strategy.chart().
+
+    ``session_id`` mirrors DecisionLog: NULL = live trading, named string = backtest run.
+    ``chart`` is a logical grouping (e.g. "price", "oscillators"); ``series`` is the
+    individual line name (e.g. "ema_9", "atr_14").
+    """
+
+    __tablename__ = "indicator_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    algo_name: Mapped[str] = mapped_column(String, index=True)
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    interval: Mapped[str] = mapped_column(String)
+    chart: Mapped[str] = mapped_column(String)
+    series: Mapped[str] = mapped_column(String)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    value: Mapped[float]
+
+
 class DecisionLog(Base):
     """
     Audit record for every decision made in response to a tick.
