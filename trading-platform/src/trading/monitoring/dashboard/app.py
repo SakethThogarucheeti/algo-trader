@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
-from trading.core.models import Candle, DecisionLog, Heartbeat, Order, Position, Signal
+from trading.core.models import AlgoConfig, Candle, DecisionLog, Heartbeat, Order, Position, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,11 @@ def build_app(
         async with session_factory() as session:
             result = await session.execute(
                 select(Candle)
-                .where(Candle.symbol == symbol, Candle.interval == interval)
+                .where(
+                    Candle.symbol == symbol,
+                    Candle.interval == interval,
+                    Candle.ts >= _today_start(),
+                )
                 .order_by(Candle.ts.desc())
                 .limit(limit)
             )
@@ -255,6 +259,38 @@ def build_app(
             )
 
         return JSONResponse(content=points)
+
+    # ------------------------------------------------------------------
+    # GET /api/charts?session_id=&limit= — indicator chart series (JSON)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/charts")
+    async def get_charts(session_id: str = "", limit: int = 500) -> JSONResponse:
+        from trading.storage.repository import Repository
+        repo = Repository()
+        sid: str | None = session_id if session_id else None
+        since = _today_start()
+
+        async with session_factory() as session:
+            # Collect all algo names
+            result = await session.execute(select(AlgoConfig.name))
+            algo_names = [r[0] for r in result.fetchall()]
+
+        # For each algo, get chart names then fetch each chart's series
+        combined: dict[str, dict[str, list[dict]]] = {}
+        async with session_factory() as session:
+            for algo_name in algo_names:
+                chart_names = await repo.get_chart_names(session, algo_name, since, sid)
+                for chart_name in chart_names:
+                    series = await repo.get_indicator_series(
+                        session, algo_name, chart_name, since, sid, limit
+                    )
+                    # Merge series from multiple algos into the same chart bucket
+                    if chart_name not in combined:
+                        combined[chart_name] = {}
+                    combined[chart_name].update(series)
+
+        return JSONResponse(content=combined)
 
     # ------------------------------------------------------------------
     # GET /api/decisions/stream?session_id= — SSE live decision feed

@@ -125,6 +125,9 @@
     .decision-entry .ts   { color: var(--muted); min-width: 7ch; flex-shrink: 0; }
     .decision-entry .sym  { font-weight: 600; min-width: 6ch; }
     .decision-entry .step { min-width: 18ch; }
+    .decision-entry .step.pos     { color: var(--pos); }
+    .decision-entry .step.neg     { color: var(--neg); }
+    .decision-entry .step.neutral { color: var(--neutral); }
     .decision-entry .ctx  { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 
     /* htmx indicator */
@@ -216,6 +219,14 @@
     </div>
     <div class="card-body" style="padding:0.5rem 0.75rem;">
       <div id="decision-feed"></div>
+    </div>
+  </div>
+
+  <!-- Indicator charts -->
+  <div class="card full-width">
+    <div class="card-header"><span>Indicator Charts</span></div>
+    <div class="card-body" style="padding:0.75rem;" id="indicator-charts-container">
+      <p class="empty-state" id="indicator-charts-empty">No indicator data yet — waiting for candles…</p>
     </div>
   </div>
 
@@ -327,7 +338,9 @@ async function refreshAlgos() {
     <span style="font-size:11px;color:${T.muted}">${a.strategy_id}</span>
     ${statusHtml}
   </div>
-  <div id="algo-gauge-${i}" style="height:32px;width:100%;margin-bottom:0.4rem"></div>
+  ${complete
+    ? `<div style="height:32px;display:flex;align-items:center;margin-bottom:0.4rem;font-size:13px;color:${T.pos}">✓ warmed up</div>`
+    : `<div id="algo-gauge-${i}" style="height:32px;width:100%;margin-bottom:0.4rem"></div>`}
   <div style="font-size:11px;color:${T.muted};margin-bottom:0.5rem">${barsSeen} / ${warmup} warm-up bars &nbsp;·&nbsp; last signal: ${lastSig}</div>
   ${paramRows ? `<table style="width:100%;border-collapse:collapse;margin-bottom:0.4rem">${paramRows}</table>` : ""}
   ${stateRows ? `<table style="width:100%;border-collapse:collapse">${stateRows}</table>` : ""}
@@ -340,8 +353,9 @@ async function refreshAlgos() {
       const barsSeen = s.bars_seen || 0;
       const warmup   = s.warmup_candles || a.warmup_candles || 1;
       const complete = s.warmup_complete || false;
+      if (complete) return;
       const pct      = Math.min(100, Math.round(barsSeen / warmup * 100));
-      const colour   = complete ? T.pos : T.neutral;
+      const colour   = T.neutral;
       const chart    = echarts.init(document.getElementById(`algo-gauge-${i}`));
       chart.setOption({
         backgroundColor: "transparent",
@@ -441,7 +455,7 @@ function initCandleChart() {
     },
     xAxis: _AX_X({ boundaryGap:true, axisLabel:{ color:T.muted, fontSize:10, rotate:30 }, splitLine:{show:false} }),
     yAxis: _AX_Y({ axisLabel:{ color:T.muted, fontSize:10, formatter: v => "₹"+v.toLocaleString("en-IN") } }),
-    series: [{ type:"candlestick", data:[], itemStyle:{ color:T.pos, color0:T.neg, borderColor:T.pos, borderColor0:T.neg } }],
+    series: [{ type:"candlestick", data:[], barWidth:6, itemStyle:{ color:T.pos, color0:T.neg, borderColor:T.pos, borderColor0:T.neg } }],
     dataZoom: [
       { type:"inside" },
       { type:"slider", height:20, bottom:4, borderColor:T.border, fillerColor:"rgba(99,102,241,0.15)", handleStyle:{color:T.accent}, textStyle:{color:T.muted,fontSize:10} },
@@ -454,9 +468,15 @@ async function refreshCandles() {
   try {
     const symbol   = document.getElementById("candle-symbol").textContent.trim();
     const interval = document.getElementById("candle-interval").value;
+    const VISIBLE = 60;
     const data = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=200`).then(r => r.json());
     const labels = data.map(d => new Date(d.ts).toLocaleString("en-IN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}));
-    _candleChart.setOption({ xAxis:{data:labels}, series:[{data:data.map(d=>[d.open,d.close,d.low,d.high])}] });
+    const startPct = data.length > VISIBLE ? Math.round((data.length - VISIBLE) / data.length * 100) : 0;
+    _candleChart.setOption({
+      xAxis: { data: labels },
+      series: [{ data: data.map(d => [d.open, d.close, d.low, d.high]) }],
+    });
+    _candleChart.dispatchAction({ type:"dataZoom", start:startPct, end:100 });
   } catch(e) { console.warn("Candle fetch failed:", e); }
 }
 
@@ -573,6 +593,93 @@ function startSSE(sessionId) {
 }
 
 // ---------------------------------------------------------------------------
+// Indicator charts
+// ---------------------------------------------------------------------------
+
+const _indicatorCharts = {};   // chartName → echarts instance
+
+const _INDICATOR_SERIES_COLORS = [
+  "#6366f1","#22c55e","#f59e0b","#ef4444","#38bdf8","#a78bfa","#fb7185","#34d399",
+];
+
+async function refreshIndicatorCharts() {
+  const sid = document.getElementById("session-select")?.value || "";
+  let data;
+  try {
+    data = await fetch(`/api/charts?session_id=${encodeURIComponent(sid)}&limit=500`).then(r => r.json());
+  } catch { return; }
+
+  const container = document.getElementById("indicator-charts-container");
+  const empty = document.getElementById("indicator-charts-empty");
+  const chartNames = Object.keys(data);
+
+  if (chartNames.length === 0) return;
+  if (empty) empty.style.display = "none";
+
+  for (const chartName of chartNames) {
+    const seriesMap = data[chartName];
+    if (!seriesMap || Object.keys(seriesMap).length === 0) continue;
+
+    if (!_indicatorCharts[chartName]) {
+      const label = document.createElement("div");
+      label.style.cssText = "font-size:11px;color:var(--muted);margin-top:12px;margin-bottom:4px;";
+      label.textContent = chartName;
+      container.appendChild(label);
+
+      const div = document.createElement("div");
+      div.style.cssText = "height:200px;width:100%;";
+      container.appendChild(div);
+      _indicatorCharts[chartName] = echarts.init(div, null, { renderer: "canvas" });
+    }
+
+    const firstSeries = Object.values(seriesMap)[0] || [];
+    const labels = firstSeries.map(p => p.ts.slice(11, 16));
+    const seriesNames = Object.keys(seriesMap);
+
+    const series = seriesNames.map((name, i) => ({
+      name,
+      type: "line",
+      smooth: false,
+      symbol: "none",
+      lineStyle: { width: 1.5, color: _INDICATOR_SERIES_COLORS[i % _INDICATOR_SERIES_COLORS.length] },
+      data: seriesMap[name].map(p => p.value),
+    }));
+
+    _indicatorCharts[chartName].setOption({
+      backgroundColor: T.bg,
+      grid: { top: 28, bottom: 28, left: 52, right: 16 },
+      legend: {
+        data: seriesNames,
+        textStyle: { color: T.muted, fontSize: 11 },
+        top: 4,
+      },
+      xAxis: {
+        type: "category",
+        data: labels,
+        boundaryGap: false,
+        axisLine: { lineStyle: { color: T.border } },
+        axisLabel: { color: T.muted, fontSize: 10 },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: "value",
+        scale: true,
+        axisLine: { lineStyle: { color: T.border } },
+        axisLabel: { color: T.muted, fontSize: 10 },
+        splitLine: { lineStyle: { color: T.border, type: "dashed" } },
+      },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: T.grid,
+        borderColor: T.border,
+        textStyle: { color: T.text, fontSize: 11 },
+      },
+      series,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 
@@ -587,6 +694,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initCandleChart(); refreshCandles(); setInterval(refreshCandles, 30_000);
   initTickChart();   refreshTicks();   setInterval(refreshTicks,    5_000);
   initPnlChart();    refreshPnl();     setInterval(refreshPnl,     30_000);
+
+  refreshIndicatorCharts(); setInterval(refreshIndicatorCharts, 30_000);
 
   startSSE("");
 });
