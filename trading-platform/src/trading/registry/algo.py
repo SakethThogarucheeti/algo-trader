@@ -19,7 +19,7 @@ from trading.strategy.base import Strategy
 logger = logging.getLogger(__name__)
 
 
-class AlgoConfig(BaseModel):
+class AlgoRunConfig(BaseModel):
     instrument_strategy_map: dict[str, str]
     equity: float = Field(default=100_000.0, gt=0)
     warmup_candles: int = Field(default=200, gt=0)
@@ -47,7 +47,7 @@ class AlgoRegistry(AbstractRegistry):
 
     def __init__(
         self,
-        config: AlgoConfig,
+        config: AlgoRunConfig,
         session_factory: async_sessionmaker[AsyncSession],
         repo: AbstractRepository,
         algos: dict[str, _AlgoInstance] | None = None,
@@ -92,7 +92,7 @@ class AlgoRegistry(AbstractRegistry):
                         session_id=self._config.session_id,
                     )
         except Exception:
-            logger.debug("AlgoRegistry: indicator log failed for %s/%s", chart, series)
+            logger.warning("AlgoRegistry: indicator log failed for %s/%s", chart, series)
 
     async def handle(self, candle: CandleEvent) -> list[SignalEvent]:
         instance = self._algos.get(candle.symbol)

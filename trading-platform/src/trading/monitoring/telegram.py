@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -74,8 +75,6 @@ class TelegramAlerter:
                 logger.warning(
                     "TelegramAlerter: rate limited by Telegram, waiting %ds", retry_after
                 )
-                import asyncio
-
                 await asyncio.sleep(retry_after)
                 return await self._post(message, attempt + 1)
 
@@ -85,8 +84,6 @@ class TelegramAlerter:
                     response.status_code,
                     attempt,
                 )
-                import asyncio
-
                 await asyncio.sleep(2**attempt)
                 return await self._post(message, attempt + 1)
 
@@ -99,8 +96,6 @@ class TelegramAlerter:
 
         except httpx.TimeoutException:
             logger.warning("TelegramAlerter: timeout, retrying (attempt %d)", attempt)
-            import asyncio
-
             await asyncio.sleep(2**attempt)
             return await self._post(message, attempt + 1)
 

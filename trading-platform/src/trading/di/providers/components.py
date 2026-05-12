@@ -20,7 +20,7 @@ from trading.engine.scheduler import Scheduler
 from trading.execution.executor import OrderExecutor
 from trading.indicators.context import IndicatorContext
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoConfig, AlgoRegistry, _AlgoInstance
+from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -180,7 +180,7 @@ class ComponentProvider(Provider):
             }
             indicator_ctx = IndicatorContext(polars_store)
             algo_reg = AlgoRegistry(
-                config=AlgoConfig(
+                config=AlgoRunConfig(
                     instrument_strategy_map={s: algo.strategy_id for s in algo.instruments},
                     instrument_types={
                         s: instrument_type_map.get(s, InstrumentType.EQUITY.value)

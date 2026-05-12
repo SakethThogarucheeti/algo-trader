@@ -92,7 +92,9 @@ def _append_or_create(path: Path, new_df: pl.DataFrame) -> None:
     else:
         combined = new_df.sort("date")
     path.parent.mkdir(parents=True, exist_ok=True)
-    combined.write_parquet(path)
+    tmp = path.with_suffix(".tmp")
+    combined.write_parquet(tmp)
+    tmp.rename(path)
 
 
 def _fetch_symbol(

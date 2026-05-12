@@ -85,17 +85,21 @@ class HeartbeatMonitor(Component):
 
     async def _monitor_loop(self) -> None:
         """Check for stale modules every timeout_secs."""
+        await self._check_stale()  # immediate check on startup
         while True:
             await sleep(self._timeout)
-            try:
-                async with self._session_factory() as session:
-                    async with session.begin():
-                        stale = await self._repo.get_stale_modules(
-                            session, self._timeout, modules=self._component_names
-                        )
-                for module in stale:
-                    logger.warning("HeartbeatMonitor: %s is stale", module)
-                    if self._alerter is not None:
-                        await self._alerter(module)
-            except Exception:
-                logger.exception("HeartbeatMonitor: monitor check failed")
+            await self._check_stale()
+
+    async def _check_stale(self) -> None:
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    stale = await self._repo.get_stale_modules(
+                        session, self._timeout, modules=self._component_names
+                    )
+            for module in stale:
+                logger.warning("HeartbeatMonitor: %s is stale", module)
+                if self._alerter is not None:
+                    await self._alerter(module)
+        except Exception:
+            logger.exception("HeartbeatMonitor: monitor check failed")
