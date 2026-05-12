@@ -260,30 +260,24 @@ class Repository(AbstractRepository):
 
         Formula: sum(avg_price * qty * side_multiplier) where
           side_multiplier = +1 for SELL fills, -1 for BUY fills
-          (i.e. we track cash flow — positive = money in from sells)
-
-        Callers should treat a non-zero result with caution: this is a
-        simple approximation. A proper P&L calc requires matching buys
-        with sells; that complexity lives outside the Repository.
+          (positive = net cash inflow from sells exceeding buy outflow)
         """
         start = datetime(for_date.year, for_date.month, for_date.day, tzinfo=UTC)
         end = datetime(for_date.year, for_date.month, for_date.day, 23, 59, 59, tzinfo=UTC)
 
         result = await session.execute(
-            select(Order).where(
+            select(Order, Signal)
+            .join(Signal, Order.signal_id == Signal.id)
+            .where(
                 Order.status == OrderStatus.FILLED.value,
                 Order.created_at >= start,
                 Order.created_at <= end,
             )
         )
-        orders = result.scalars().all()
-
         pnl = 0.0
-        for order in orders:
-            # We reconstruct side from the linked Signal to avoid storing it
-            # redundantly on Order.  For the risk check we only need total
-            # cash outflow/inflow magnitude — use abs(avg_price * qty).
-            pnl += float(order.avg_price) * order.qty
+        for order, signal in result.all():
+            sign = 1.0 if signal.side == Side.SELL.value else -1.0
+            pnl += sign * float(order.avg_price) * order.qty
         return pnl
 
     # ------------------------------------------------------------------
@@ -414,9 +408,15 @@ class Repository(AbstractRepository):
     ) -> list[dict[str, object]]:
         result = await session.execute(select(AlgoConfig))
         configs = result.scalars().all()
+        names = [c.name for c in configs]
+        states_result = await session.execute(
+            select(AlgoState).where(AlgoState.name.in_(names))
+        )
+        state_map = {s.name: s for s in states_result.scalars().all()}
+
         out = []
         for cfg in configs:
-            state_obj = await session.get(AlgoState, cfg.name)
+            state_obj = state_map.get(cfg.name)
             state = json.loads(state_obj.state) if state_obj else {}
             out.append(
                 {
