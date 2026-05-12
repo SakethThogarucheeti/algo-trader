@@ -30,7 +30,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoConfig, AlgoRegistry, _AlgoInstance
+from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
 from trading.registry.candle import _SymbolConfig
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -149,7 +149,7 @@ class BacktestSession(TestingSession):
             polars_store = PolarsStore()
 
             algo_reg = AlgoRegistry(
-                config=AlgoConfig(
+                config=AlgoRunConfig(
                     instrument_strategy_map={s: algo.strategy_id for s in algo.instruments},
                     equity=config.initial_equity,
                     warmup_candles=200,

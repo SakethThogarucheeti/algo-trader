@@ -15,7 +15,7 @@ from trading.engine.algo_runner import AlgoRunner
 from trading.engine.candle_aggregator import CandleAggregator
 from trading.engine.component import ComponentState
 from trading.execution.executor import OrderExecutor
-from trading.registry.algo import AlgoConfig, AlgoRegistry
+from trading.registry.algo import AlgoRunConfig, AlgoRegistry
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -50,7 +50,7 @@ async def engine() -> AsyncEngine:  # type: ignore[misc]
 
 async def test_algo_runner_starts_and_reaches_running(engine: AsyncEngine) -> None:
     sf = build_session_factory(engine)
-    config = AlgoConfig(
+    config = AlgoRunConfig(
         instrument_strategy_map={"INFY": "ema_crossover"},
         algo_name="test",
     )
@@ -69,7 +69,7 @@ async def test_algo_runner_starts_and_reaches_running(engine: AsyncEngine) -> No
 
 async def test_algo_runner_name_includes_algo_name(engine: AsyncEngine) -> None:
     sf = build_session_factory(engine)
-    config = AlgoConfig(
+    config = AlgoRunConfig(
         instrument_strategy_map={"INFY": "ema_crossover"},
         algo_name="momentum",
     )

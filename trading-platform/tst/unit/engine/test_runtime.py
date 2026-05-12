@@ -227,7 +227,7 @@ async def test_heartbeat_monitor_registers_components(engine: AsyncEngine) -> No
 async def test_heartbeat_monitor_beats_regularly(engine: AsyncEngine) -> None:
     monitor = make_monitor(engine, names=["monitor"], beat=1)
     task = asyncio.get_event_loop().create_task(monitor.start())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(1.5)  # allow setup + initial stale check + first beat (beat=1s)
 
     from trading.core.database import get_session
 

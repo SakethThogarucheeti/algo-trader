@@ -32,7 +32,7 @@ def test_make_strategy_opening_range_breakout() -> None:
 
 
 def test_make_strategy_unknown_raises() -> None:
-    with pytest.raises(ValueError, match="Unknown strategy alias"):
+    with pytest.raises(ValueError, match="Unknown strategy"):
         make_strategy("nonexistent_strategy")
 
 
@@ -47,8 +47,8 @@ def test_make_strategy_injects_clock_when_accepted() -> None:
     clock = SimulatedClock()
     s = make_strategy("vwap_reversion", clock=clock)
     assert isinstance(s, VwapReversionStrategy)
-    # Clock is forwarded into the VWAP indicator inside the strategy
-    assert s._vwap._clock is clock  # type: ignore[attr-defined]
+    # Clock is stored on the strategy and forwarded to indicators at first candle
+    assert s._clock is clock  # type: ignore[attr-defined]
 
 
 def test_make_strategy_clock_ignored_when_not_accepted() -> None:

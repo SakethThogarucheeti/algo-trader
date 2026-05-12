@@ -12,7 +12,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType, SignalEvent
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoConfig, AlgoRegistry, _AlgoInstance
+from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
 from trading.storage.repository import Repository
 
 BASE_TIME = datetime(2025, 1, 6, 9, 15, tzinfo=UTC)
@@ -47,7 +47,7 @@ def make_registry(
     sf = build_session_factory(engine)
     instrument_strategy_map = {"INFY": "ema_crossover"}
     instrument_types = {"INFY": "EQUITY"}
-    config = AlgoConfig(
+    config = AlgoRunConfig(
         instrument_strategy_map=instrument_strategy_map,
         instrument_types=instrument_types,
         equity=100_000.0,
@@ -91,7 +91,7 @@ def test_registry_with_multiple_instruments(engine: AsyncEngine) -> None:
     sf = build_session_factory(engine)
     instrument_strategy_map = {"INFY": "ema_crossover", "TCS": "ema_crossover"}
     instrument_types = {"INFY": "EQUITY", "TCS": "EQUITY"}
-    config = AlgoConfig(
+    config = AlgoRunConfig(
         instrument_strategy_map=instrument_strategy_map,
         instrument_types=instrument_types,
     )
@@ -168,7 +168,7 @@ async def test_handle_only_affects_matching_symbol(engine: AsyncEngine) -> None:
     sf = build_session_factory(engine)
     instrument_strategy_map = {"INFY": "ema_crossover", "TCS": "ema_crossover"}
     instrument_types = {"INFY": "EQUITY", "TCS": "EQUITY"}
-    config = AlgoConfig(
+    config = AlgoRunConfig(
         instrument_strategy_map=instrument_strategy_map,
         instrument_types=instrument_types,
         warmup_candles=5,
@@ -264,7 +264,7 @@ async def test_log_signal_with_nonzero_tick_log_id(engine: AsyncEngine) -> None:
 
 
 def test_algo_config_defaults() -> None:
-    cfg = AlgoConfig(
+    cfg = AlgoRunConfig(
         instrument_strategy_map={"INFY": "ema_crossover"},
     )
     assert cfg.equity == 100_000.0
