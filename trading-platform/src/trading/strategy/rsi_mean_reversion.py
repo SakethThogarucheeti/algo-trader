@@ -43,6 +43,9 @@ class RsiMeanReversionStrategy(Strategy):
         # indicator cache: symbol → (rsi, atr)
         self._inds: dict[str, tuple[RSI, ATR]] = {}
         self._prev_rsi: dict[str, float | None] = {}
+        # last computed values for dashboard state
+        self._last_rsi: float | None = None
+        self._last_atr: float | None = None
 
     def set_store(self, store: Any) -> None:
         self._store = store
@@ -57,7 +60,12 @@ class RsiMeanReversionStrategy(Strategy):
         return self._inds[symbol]
 
     def get_state(self) -> dict[str, object]:
-        return {}
+        return {
+            f"rsi_{self._rsi_period}": round(self._last_rsi, 2) if self._last_rsi is not None else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
+            "oversold": self._oversold,
+            "overbought": self._overbought,
+        }
 
     async def on_candle(
         self,
@@ -71,6 +79,12 @@ class RsiMeanReversionStrategy(Strategy):
 
         rsi = await rsi_ind.compute(rsi_params)
         atr = await atr_ind.compute(atr_params)
+
+        self._last_rsi = rsi
+        self._last_atr = atr
+
+        self.chart("oscillators", f"rsi_{self._rsi_period}", rsi, candle.timestamp)
+        self.chart("oscillators", f"atr_{self._atr_period}", atr, candle.timestamp)
 
         prev_rsi = self._prev_rsi.get(symbol)
         self._prev_rsi[symbol] = rsi

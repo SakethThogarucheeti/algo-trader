@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
 from trading.indicators.library.atr import ATR
@@ -12,7 +14,7 @@ from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)
 
-_IST_OFFSET_MINS = 5 * 60 + 30
+_IST = ZoneInfo("Asia/Kolkata")
 _SESSION_OPEN_IST = time(9, 15)
 
 
@@ -46,6 +48,10 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._inds: dict[str, ATR] = {}
         # (session_date, or_high, or_low, signal_taken)
         self._state: dict[str, tuple[object, float, float, bool]] = {}
+        # last computed values for dashboard state
+        self._last_atr: float | None = None
+        self._last_or_high: float | None = None
+        self._last_or_low: float | None = None
 
     def set_store(self, store: Any) -> None:
         self._store = store
@@ -56,7 +62,11 @@ class OpeningRangeBreakoutStrategy(Strategy):
         return self._inds[symbol]
 
     def get_state(self) -> dict[str, object]:
-        return {}
+        return {
+            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
+            "or_high": round(self._last_or_high, 2) if self._last_or_high is not None and not math.isinf(self._last_or_high) else None,
+            "or_low": round(self._last_or_low, 2) if self._last_or_low is not None and not math.isinf(self._last_or_low) else None,
+        }
 
     async def on_candle(
         self,
@@ -66,14 +76,14 @@ class OpeningRangeBreakoutStrategy(Strategy):
     ) -> Signal | None:
         atr_ind = self._get_atr(symbol, candle.interval)
         atr = await atr_ind.compute(ATR.Parameters(period=self._atr_period))
+        self._last_atr = atr
+        self.chart("oscillators", f"atr_{self._atr_period}", atr, candle.timestamp)
         if atr is None or atr <= 0:
             return None
 
-        ts = candle.timestamp
-        ist_total_mins = (ts.hour * 60 + ts.minute + _IST_OFFSET_MINS) % (24 * 60)
-        ist_hour, ist_min = divmod(ist_total_mins, 60)
-        cur_ist = time(ist_hour, ist_min)
-        cur_date = ts.date()
+        ts_ist = candle.timestamp.astimezone(_IST)
+        cur_ist = ts_ist.time()
+        cur_date = ts_ist.date()
 
         session_open_min = _SESSION_OPEN_IST.hour * 60 + _SESSION_OPEN_IST.minute
         or_end_min = session_open_min + self._orb_bars * self._interval_minutes
@@ -81,7 +91,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
 
         state = self._state.get(symbol)
         if state is None or state[0] != cur_date:
-            self._state[symbol] = (cur_date, 0.0, float("inf"), False)
+            self._state[symbol] = (cur_date, -math.inf, math.inf, False)
             state = self._state[symbol]
 
         session_date, or_high, or_low, signal_taken = state
@@ -90,9 +100,11 @@ class OpeningRangeBreakoutStrategy(Strategy):
             new_high = max(or_high, candle.high)
             new_low = min(or_low, candle.low)
             self._state[symbol] = (cur_date, new_high, new_low, False)
+            self._last_or_high = float(new_high)
+            self._last_or_low = float(new_low)
             return None
 
-        if signal_taken or or_high == 0.0 or or_low == float("inf"):
+        if signal_taken or or_high == -math.inf or or_low == math.inf:
             return None
 
         stop_distance = self._atr_multiplier * atr

@@ -49,6 +49,14 @@ class Strategy(ABC):
 
     _chart_cb: Callable[[str, str, float, datetime], None] | None = None
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        alias = cls.__dict__.get("alias")
+        if alias is None:
+            return  # abstract intermediates are fine
+        if not isinstance(alias, str) or not alias:
+            raise TypeError(f"{cls.__name__}.alias must be a non-empty string")
+
     def set_chart_callback(self, cb: Callable[[str, str, float, datetime], None]) -> None:
         """Injected by AlgoRegistry. Strategies call self.chart() to push indicator values."""
         self._chart_cb = cb

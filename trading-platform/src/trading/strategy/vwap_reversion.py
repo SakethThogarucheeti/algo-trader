@@ -45,6 +45,10 @@ class VwapReversionStrategy(Strategy):
         self._inds: dict[str, tuple[VWAP, ATR]] = {}
         self._prev_close: dict[str, float | None] = {}
         self._prev_vwap: dict[str, float | None] = {}
+        # last computed values for dashboard state
+        self._last_vwap: float | None = None
+        self._last_atr: float | None = None
+        self._last_close: float | None = None
 
     def set_store(self, store: Any) -> None:
         self._store = store
@@ -59,7 +63,12 @@ class VwapReversionStrategy(Strategy):
         return self._inds[symbol]
 
     def get_state(self) -> dict[str, object]:
-        return {}
+        return {
+            "vwap": round(self._last_vwap, 4) if self._last_vwap is not None else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
+            "last_close": round(self._last_close, 2) if self._last_close is not None else None,
+            "vwap_band": self._vwap_band,
+        }
 
     async def on_candle(
         self,
@@ -73,6 +82,13 @@ class VwapReversionStrategy(Strategy):
 
         vwap = await vwap_ind.compute(vwap_params)
         atr = await atr_ind.compute(atr_params)
+
+        self._last_vwap = vwap
+        self._last_atr = atr
+        self._last_close = float(candle.close)
+
+        self.chart("price", "vwap", vwap, candle.timestamp)
+        self.chart("oscillators", f"atr_{self._atr_period}", atr, candle.timestamp)
 
         prev_close = self._prev_close.get(symbol)
         prev_vwap = self._prev_vwap.get(symbol)
