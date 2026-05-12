@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_json(s: str | None) -> dict:
+    if not s:
+        return {}
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        logger.warning("reports: malformed JSON: %r", s[:100])
+        return {}
 
 from trading.core.models import AuditLog, DecisionLog, Heartbeat, Signal
 from trading.core.schemas import OrderStatus
@@ -63,7 +76,7 @@ def print_strategy_section(
     for d in decisions:
         step_counts[d.step] += 1
         if d.step == "SIGNAL_REJECTED":
-            ctx = json.loads(d.context) if d.context else {}
+            ctx = _safe_json(d.context)
             rejection_reasons[str(ctx.get("reason", "UNKNOWN"))] += 1
 
     generated = step_counts.get("SIGNAL_GENERATED", 0)
@@ -250,7 +263,7 @@ def print_system_section(
     circuit_events = 0
     for d in decisions:
         if d.step == "SIGNAL_REJECTED":
-            ctx = json.loads(d.context) if d.context else {}
+            ctx = _safe_json(d.context)
             reason = str(ctx.get("reason", "UNKNOWN"))
             risk_hits[reason] += 1
             if reason == "CIRCUIT_OPEN":

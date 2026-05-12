@@ -3,7 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_json(s: str | None) -> dict:
+    if not s:
+        return {}
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        logger.warning("reports: malformed JSON: %r", s[:100])
+        return {}
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,13 +69,13 @@ async def fetch_algo_configs(session: AsyncSession) -> list[dict[str, object]]:
     configs = result.scalars().all()
     out = []
     for cfg in configs:
-        state = json.loads(cfg.state.state) if cfg.state else {}
+        state = _safe_json(cfg.state.state if cfg.state else None)
         out.append({
             "name": cfg.name,
             "strategy_id": cfg.strategy_id,
             "equity": cfg.equity,
             "enabled": cfg.enabled,
-            "params": json.loads(cfg.params),
+            "params": _safe_json(cfg.params),
             "warmup_candles": cfg.warmup_candles,
             "state": state,
         })
