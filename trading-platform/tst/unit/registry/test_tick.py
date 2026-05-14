@@ -16,7 +16,7 @@ from trading.core.models import Instrument
 from trading.core.schemas import InstrumentType, TickEvent
 from trading.engine.kite_ingestor import KiteIngestor
 from trading.registry.tick import TickConfig, TickRegistry
-from trading.storage.repository import Repository
+from trading.storage.stores.audit import AuditStore
 
 NOW = datetime.now(UTC)
 
@@ -71,8 +71,7 @@ class MockBrokerStream(BrokerStream):
 
 def make_instruments(*tokens: int, itype: str = "EQUITY") -> list[Instrument]:
     return [
-        Instrument(token=t, symbol=f"SYM{t}", exchange="NSE", instrument_type=itype)
-        for t in tokens
+        Instrument(token=t, symbol=f"SYM{t}", exchange="NSE", instrument_type=itype) for t in tokens
     ]
 
 
@@ -97,13 +96,11 @@ async def engine() -> AsyncEngine:  # type: ignore[misc]
     await eng.dispose()
 
 
-def make_tick_registry(
-    stream: MockBrokerStream, engine: AsyncEngine, *tokens: int
-) -> TickRegistry:
+def make_tick_registry(stream: MockBrokerStream, engine: AsyncEngine, *tokens: int) -> TickRegistry:
     instruments = make_instruments(*tokens) if tokens else make_instruments(1, 2)
     sf = build_session_factory(engine)
     config = TickConfig(instruments=instruments, exec_id="paper")
-    return TickRegistry(config=config, stream=stream, session_factory=sf, repo=Repository())
+    return TickRegistry(config=config, stream=stream, audit=AuditStore(sf))
 
 
 @pytest.fixture
@@ -192,7 +189,7 @@ async def test_instrument_type_correct_on_tick_event(engine: AsyncEngine) -> Non
     sf = build_session_factory(engine)
     stream = MockBrokerStream()
     config = TickConfig(instruments=instruments, exec_id="paper")
-    reg = TickRegistry(config=config, stream=stream, session_factory=sf, repo=Repository())
+    reg = TickRegistry(config=config, stream=stream, audit=AuditStore(sf))
 
     result = await reg.handle(make_raw_tick(token=5, price=1500.0))
     assert result is not None
@@ -250,8 +247,7 @@ async def test_disconnect_sets_circuit_after_timeout(engine: AsyncEngine) -> Non
     reg = TickRegistry(
         config=config,
         stream=stream,
-        session_factory=sf,
-        repo=Repository(),
+        audit=AuditStore(sf),
         circuit_timeout_secs=0.05,
     )
 
@@ -273,9 +269,7 @@ async def test_disconnect_sets_circuit_after_timeout(engine: AsyncEngine) -> Non
 # ---------------------------------------------------------------------------
 
 
-async def test_stop_closes_stream(
-    stream: MockBrokerStream, ingestor: KiteIngestor
-) -> None:
+async def test_stop_closes_stream(stream: MockBrokerStream, ingestor: KiteIngestor) -> None:
     task = asyncio.get_event_loop().create_task(ingestor.start())
     await asyncio.sleep(0.05)
 
@@ -288,6 +282,7 @@ async def test_stop_closes_stream(
 async def test_teardown_cancels_pending_circuit_task(engine: AsyncEngine) -> None:
     """Covers line 71: _teardown cancels a pending circuit timer on disconnect."""
     import trading.registry.tick as tick_mod
+
     original = tick_mod._CIRCUIT_TIMEOUT_SECS
     tick_mod._CIRCUIT_TIMEOUT_SECS = 60.0  # long timeout — task won't complete before teardown
 
@@ -327,7 +322,7 @@ async def test_ingestor_no_instruments_logs_warning(engine: AsyncEngine) -> None
     # Create a tick registry with no instruments
     sf = build_session_factory(engine)
     config = TickConfig(instruments=[], exec_id="paper")
-    reg = TickRegistry(config=config, stream=stream, session_factory=sf, repo=Repository())
+    reg = TickRegistry(config=config, stream=stream, audit=AuditStore(sf))
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
     task = asyncio.get_event_loop().create_task(ingestor.start())

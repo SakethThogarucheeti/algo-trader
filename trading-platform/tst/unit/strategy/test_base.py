@@ -8,9 +8,9 @@ from uuid import UUID
 import pytest
 
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.context import IndicatorContext
 from trading.indicators.polars_store import PolarsStore
 from trading.strategy.ema_crossover import EmaCrossoverStrategy
+from trading.strategy.base import Strategy
 
 BASE_TIME = datetime(2025, 1, 6, 3, 45, 0, tzinfo=UTC)
 INFY = "INFY"
@@ -47,15 +47,23 @@ class _Harness:
     def __init__(self, strategy: EmaCrossoverStrategy) -> None:
         self._strategy = strategy
         self._store = PolarsStore()
-        self._ctx = IndicatorContext(self._store)
+        strategy.set_store(self._store)
 
     async def feed(self, candle: CandleEvent):
-        self._store.push(candle.symbol, candle.interval, {
-            "symbol": candle.symbol, "interval": candle.interval, "ts": candle.timestamp,
-            "open": candle.open, "high": candle.high, "low": candle.low,
-            "close": candle.close, "volume": candle.volume,
-        })
-        self._ctx.bind_all(self._strategy.indicators, candle.symbol, candle.interval)
+        self._store.push(
+            candle.symbol,
+            candle.interval,
+            {
+                "symbol": candle.symbol,
+                "interval": candle.interval,
+                "ts": candle.timestamp,
+                "open": candle.open,
+                "high": candle.high,
+                "low": candle.low,
+                "close": candle.close,
+                "volume": candle.volume,
+            },
+        )
         return await self._strategy.on_candle(candle.symbol, EQUITY, candle)
 
 
@@ -184,3 +192,19 @@ def test_invalid_params_raise() -> None:
 
 def test_strategy_id() -> None:
     assert EmaCrossoverStrategy().id == "ema_crossover"
+
+
+# ---------------------------------------------------------------------------
+# Strategy base
+# ---------------------------------------------------------------------------
+
+
+def test_strategy_base_get_state_default() -> None:
+    class _Minimal(Strategy):
+        alias = "_test_minimal_strategy_xyz"
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    strat = _Minimal()
+    assert strat.get_state() == {}

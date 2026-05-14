@@ -13,7 +13,7 @@ from trading.core.models import Heartbeat
 from trading.engine.component import Component, ComponentState
 from trading.engine.heartbeat import HeartbeatMonitor
 from trading.engine.runtime import Runtime
-from trading.storage.repository import Repository
+from trading.storage.stores.heartbeat import HeartbeatStore
 
 # ---------------------------------------------------------------------------
 # Minimal Component implementations for testing
@@ -158,6 +158,7 @@ async def test_runtime_component_stop_exception_does_not_crash() -> None:
 
         async def _run(self) -> None:
             from anyio import sleep_forever
+
             await sleep_forever()
 
         async def stop(self) -> None:  # type: ignore[override]
@@ -193,7 +194,7 @@ def make_monitor(
 ) -> HeartbeatMonitor:
     sf = build_session_factory(engine)
     return HeartbeatMonitor(
-        Repository(),
+        HeartbeatStore(sf),
         sf,
         component_names=names or ["a", "b"],
         beat_interval_secs=beat,

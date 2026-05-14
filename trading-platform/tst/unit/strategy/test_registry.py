@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from trading.core.clock import Clock
-from trading.strategy.base import Signal, Strategy
+from trading.strategy.base import Strategy
 from trading.strategy.ema_crossover import EmaCrossoverStrategy
 from trading.strategy.factory import StrategyFactory
 from trading.strategy.opening_range_breakout import OpeningRangeBreakoutStrategy
@@ -36,12 +36,15 @@ _BUILTIN_ALIASES = [
 
 
 class TestGet:
-    @pytest.mark.parametrize("alias,expected_cls", [
-        ("ema_crossover", EmaCrossoverStrategy),
-        ("rsi_mean_reversion", RsiMeanReversionStrategy),
-        ("vwap_reversion", VwapReversionStrategy),
-        ("opening_range_breakout", OpeningRangeBreakoutStrategy),
-    ])
+    @pytest.mark.parametrize(
+        "alias,expected_cls",
+        [
+            ("ema_crossover", EmaCrossoverStrategy),
+            ("rsi_mean_reversion", RsiMeanReversionStrategy),
+            ("vwap_reversion", VwapReversionStrategy),
+            ("opening_range_breakout", OpeningRangeBreakoutStrategy),
+        ],
+    )
     def test_returns_correct_class(self, alias, expected_cls):
         assert StrategyFactory.get(alias) is expected_cls
 
@@ -101,10 +104,13 @@ class TestRegistered:
 
 
 class TestIdProperty:
-    @pytest.mark.parametrize("alias,cls", [
-        ("ema_crossover", EmaCrossoverStrategy),
-        ("rsi_mean_reversion", RsiMeanReversionStrategy),
-    ])
+    @pytest.mark.parametrize(
+        "alias,cls",
+        [
+            ("ema_crossover", EmaCrossoverStrategy),
+            ("rsi_mean_reversion", RsiMeanReversionStrategy),
+        ],
+    )
     def test_id_returns_alias(self, alias, cls):
         inst = cls()
         assert inst.id == alias

@@ -286,5 +286,6 @@ async def test_drop_db_removes_tables(engine: AsyncEngine) -> None:
 def test_build_engine_returns_async_engine() -> None:
     """Covers build_engine (line 18)."""
     from sqlalchemy.ext.asyncio import AsyncEngine
+
     eng = build_engine("sqlite+aiosqlite:///:memory:")
     assert isinstance(eng, AsyncEngine)

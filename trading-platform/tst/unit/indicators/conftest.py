@@ -21,16 +21,18 @@ def candles(closes: list[float], *, base_ts: datetime | None = None) -> list[dic
     rows = []
     for i, c in enumerate(closes):
         ts = base_ts + timedelta(minutes=15 * i)
-        rows.append({
-            "symbol": "TEST",
-            "interval": "15min",
-            "ts": ts,
-            "open": c,
-            "high": c + 1.0,
-            "low": c - 1.0,
-            "close": c,
-            "volume": 1000,
-        })
+        rows.append(
+            {
+                "symbol": "TEST",
+                "interval": "15min",
+                "ts": ts,
+                "open": c,
+                "high": c + 1.0,
+                "low": c - 1.0,
+                "close": c,
+                "volume": 1000,
+            }
+        )
     return rows
 
 

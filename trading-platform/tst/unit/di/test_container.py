@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import (
 from trading.config.settings import Settings
 from trading.core.database import build_session_factory, init_db
 from trading.di.container import build_container
-from trading.storage.repository import Repository
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.trading import TradingStore
 
 # ---------------------------------------------------------------------------
 # Test infrastructure provider — replaces prod InfraProvider in tests
@@ -48,8 +49,12 @@ class FakeInfraProvider(Provider):
         return build_session_factory(engine)
 
     @provide
-    def repository(self) -> Repository:
-        return Repository()
+    def trading_store(self, sf: async_sessionmaker[AsyncSession]) -> TradingStore:
+        return TradingStore(sf)
+
+    @provide
+    def audit_store(self, sf: async_sessionmaker[AsyncSession]) -> AuditStore:
+        return AuditStore(sf)
 
 
 # ---------------------------------------------------------------------------
@@ -73,9 +78,14 @@ async def test_container_resolves_settings(container: AsyncContainer) -> None:
     assert settings.zerodha_api_key == "test-key"
 
 
-async def test_container_resolves_repository(container: AsyncContainer) -> None:
-    repo = await container.get(Repository)
-    assert isinstance(repo, Repository)
+async def test_container_resolves_trading_store(container: AsyncContainer) -> None:
+    store = await container.get(TradingStore)
+    assert isinstance(store, TradingStore)
+
+
+async def test_container_resolves_audit_store(container: AsyncContainer) -> None:
+    store = await container.get(AuditStore)
+    assert isinstance(store, AuditStore)
 
 
 async def test_container_resolves_db_engine(container: AsyncContainer) -> None:
@@ -88,10 +98,10 @@ async def test_container_resolves_session_factory(container: AsyncContainer) -> 
     assert callable(factory)
 
 
-async def test_repository_singleton(container: AsyncContainer) -> None:
-    repo1 = await container.get(Repository)
-    repo2 = await container.get(Repository)
-    assert repo1 is repo2
+async def test_trading_store_singleton(container: AsyncContainer) -> None:
+    store1 = await container.get(TradingStore)
+    store2 = await container.get(TradingStore)
+    assert store1 is store2
 
 
 async def test_extra_provider_overrides_default(container: AsyncContainer) -> None:

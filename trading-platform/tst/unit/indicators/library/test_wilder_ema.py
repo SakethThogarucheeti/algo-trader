@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from trading.indicators.library.wilder_ema import WilderEMA, wilder_ema

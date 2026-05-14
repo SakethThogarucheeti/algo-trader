@@ -22,7 +22,8 @@ from trading.core.schemas import (
 from trading.registry.risk import RiskConfig, RiskRegistry
 from trading.registry.tick import CircuitBreaker
 from trading.risk.sizer import calculate_quantity
-from trading.storage.repository import Repository
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.trading import TradingStore
 
 NOW = datetime.now(UTC)
 TODAY = NOW.date()
@@ -106,8 +107,8 @@ def make_registry(
     return RiskRegistry(
         config=config or make_config(),
         circuit=circuit or CircuitBreaker(),
-        session_factory=sf,
-        repo=Repository(),
+        trading=TradingStore(sf),
+        audit=AuditStore(sf),
     )
 
 

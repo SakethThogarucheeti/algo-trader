@@ -21,7 +21,7 @@ from trading.core.schemas import (
 )
 from trading.execution.idempotency import is_duplicate
 from trading.registry.exec import ExecConfig, ExecRegistry
-from trading.storage.repository import Repository
+from trading.storage.stores.trading import TradingStore
 
 NOW = datetime.now(UTC)
 
@@ -38,10 +38,12 @@ class MockBroker(Broker):
 
     def get_instruments(self):  # type: ignore[override]
         import polars as pl
+
         return pl.DataFrame()
 
     def get_ohlc(self, symbol, interval, start, end):  # type: ignore[override]
         import polars as pl
+
         return pl.DataFrame()
 
     async def place_order(self, symbol, side, qty, order_type, limit_price=None) -> str:  # type: ignore[override]
@@ -92,7 +94,7 @@ def make_registry(
         config=config,
         broker=broker or MockBroker(),
         session_factory=sf,
-        repo=Repository(),
+        trading=TradingStore(sf),
         price_store=price_store,
     )
 
@@ -187,6 +189,7 @@ async def test_valid_order_persisted_as_placed(engine: AsyncEngine) -> None:
 
     async with get_session(engine) as s:
         from sqlalchemy import select
+
         result = await s.execute(select(Order).where(Order.kite_order_id == "KITE_200"))
         order = result.scalars().first()
 
@@ -218,6 +221,7 @@ async def test_broker_error_marks_order_rejected(engine: AsyncEngine) -> None:
 
     async with get_session(engine) as s:
         from sqlalchemy import select
+
         result = await s.execute(select(Order).where(Order.signal_id == sig_id))
         order = result.scalars().first()
 
@@ -238,6 +242,7 @@ async def test_broker_timeout_marks_order_rejected(engine: AsyncEngine) -> None:
 
     async with get_session(engine) as s:
         from sqlalchemy import select
+
         result = await s.execute(select(Order).where(Order.signal_id == sig_id))
         order = result.scalars().first()
 
@@ -259,8 +264,8 @@ async def test_paper_trading_auto_fills_at_price_store_price(engine: AsyncEngine
     await _insert_signal(engine, sig_id)
     await reg.handle(make_validated(signal_id=sig_id))
 
-    async with get_session(engine) as s:
-        pos = await Repository().get_position(s, "INFY", "EQUITY")
+    sf = build_session_factory(engine)
+    pos = await TradingStore(sf).get_position("INFY", "EQUITY")
 
     assert pos is not None
     assert pos.net_qty == 10
@@ -276,8 +281,8 @@ async def test_paper_trading_no_fill_when_price_unknown(engine: AsyncEngine) -> 
     await _insert_signal(engine, sig_id)
     await reg.handle(make_validated(signal_id=sig_id))
 
-    async with get_session(engine) as s:
-        pos = await Repository().get_position(s, "INFY", "EQUITY")
+    sf = build_session_factory(engine)
+    pos = await TradingStore(sf).get_position("INFY", "EQUITY")
 
     assert pos is None  # no fill, no position
 
@@ -293,8 +298,8 @@ async def test_direct_exec_does_not_auto_fill(engine: AsyncEngine) -> None:
     await _insert_signal(engine, sig_id)
     await reg.handle(make_validated(signal_id=sig_id))
 
-    async with get_session(engine) as s:
-        pos = await Repository().get_position(s, "INFY", "EQUITY")
+    sf = build_session_factory(engine)
+    pos = await TradingStore(sf).get_position("INFY", "EQUITY")
 
     assert pos is None
 

@@ -57,10 +57,16 @@ class _FakeBroker(Broker):
         return pl.DataFrame({"symbol": ["INFY"]})
 
     def get_ohlc(self, symbol, interval, start, end) -> pl.DataFrame:  # type: ignore[override]
-        return pl.DataFrame({
-            "date": [start], "open": [100.0], "high": [110.0],
-            "low": [90.0], "close": [105.0], "volume": [1000],
-        })
+        return pl.DataFrame(
+            {
+                "date": [start],
+                "open": [100.0],
+                "high": [110.0],
+                "low": [90.0],
+                "close": [105.0],
+                "volume": [1000],
+            }
+        )
 
     async def place_order(self, symbol, side, qty, order_type, limit_price=None) -> str:  # type: ignore[override]
         return "REAL_ORDER_001"

@@ -39,9 +39,16 @@ async def test_full_upper_lower() -> None:
 @pytest.mark.asyncio
 async def test_flat_width_zero() -> None:
     rows = [
-        {"symbol": "X", "interval": "15min",
-         "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC),
-         "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 1000}
+        {
+            "symbol": "X",
+            "interval": "15min",
+            "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC),
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
         for _ in range(5)
     ]
     ind = DonchianChannels(_store(rows), "TEST", "15min")

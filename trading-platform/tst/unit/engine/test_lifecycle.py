@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import polars as pl
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -15,13 +16,17 @@ from trading.engine.algo_runner import AlgoRunner
 from trading.engine.candle_aggregator import CandleAggregator
 from trading.engine.component import ComponentState
 from trading.execution.executor import OrderExecutor
-from trading.registry.algo import AlgoRunConfig, AlgoRegistry
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
 from trading.registry.tick import CircuitBreaker
 from trading.risk.base import RiskController
-from trading.storage.repository import Repository
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.candle import CandleDataStore
+from trading.storage.stores.chart import ChartStore
+from trading.storage.stores.config import ConfigStore
+from trading.storage.stores.trading import TradingStore
 
 
 class _StubBroker(Broker):
@@ -54,7 +59,7 @@ async def test_algo_runner_starts_and_reaches_running(engine: AsyncEngine) -> No
         instrument_strategy_map={"INFY": "ema_crossover"},
         algo_name="test",
     )
-    reg = AlgoRegistry(config=config, session_factory=sf, repo=Repository())
+    reg = AlgoRegistry(config=config, chart=ChartStore(sf), config_store=ConfigStore(sf), audit=AuditStore(sf))
     runner = AlgoRunner(reg)
 
     task = asyncio.get_event_loop().create_task(runner.start())
@@ -73,7 +78,7 @@ async def test_algo_runner_name_includes_algo_name(engine: AsyncEngine) -> None:
         instrument_strategy_map={"INFY": "ema_crossover"},
         algo_name="momentum",
     )
-    reg = AlgoRegistry(config=config, session_factory=sf, repo=Repository())
+    reg = AlgoRegistry(config=config, chart=ChartStore(sf), config_store=ConfigStore(sf), audit=AuditStore(sf))
     runner = AlgoRunner(reg)
     assert "momentum" in runner.name
 
@@ -87,7 +92,7 @@ async def test_risk_controller_starts_and_reaches_running(engine: AsyncEngine) -
     sf = build_session_factory(engine)
     config = RiskConfig(equity=100_000.0, rc_id="default")
     circuit = CircuitBreaker()
-    reg = RiskRegistry(config=config, circuit=circuit, session_factory=sf, repo=Repository())
+    reg = RiskRegistry(config=config, circuit=circuit, trading=TradingStore(sf), audit=AuditStore(sf))
     ctrl = RiskController(reg)
 
     task = asyncio.get_event_loop().create_task(ctrl.start())
@@ -111,7 +116,7 @@ async def test_order_executor_starts_and_reaches_running(engine: AsyncEngine) ->
         config=config,
         broker=_StubBroker(),
         session_factory=sf,
-        repo=Repository(),
+        trading=TradingStore(sf),
         price_store=PriceStore(),
     )
     executor = OrderExecutor(reg)
@@ -136,6 +141,7 @@ async def test_candle_aggregator_starts_and_reaches_running(engine: AsyncEngine)
 
     # Seed an instrument so the registry knows the token
     from trading.core.database import get_session
+
     async with get_session(engine) as s:
         s.add(Instrument(token=1, symbol="INFY", exchange="NSE", instrument_type="EQUITY"))
 
@@ -147,8 +153,8 @@ async def test_candle_aggregator_starts_and_reaches_running(engine: AsyncEngine)
     reg = CandleRegistry(
         config=config,
         broker=_StubBroker(),
-        session_factory=sf,
-        repo=Repository(),
+        candle=CandleDataStore(sf),
+        audit=AuditStore(sf),
     )
     agg = CandleAggregator(reg)
 

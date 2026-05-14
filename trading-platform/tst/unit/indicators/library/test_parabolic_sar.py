@@ -60,5 +60,7 @@ async def test_bullish_then_bearish_flip() -> None:
 async def test_af_increments_on_new_extreme() -> None:
     closes = [float(100 + i) for i in range(100)]
     ind = make_ind(ParabolicSAR, candles(closes))
-    result = await ind.compute_full(ParabolicSAR.Parameters(af_start=0.02, af_step=0.02, af_max=0.2))
+    result = await ind.compute_full(
+        ParabolicSAR.Parameters(af_start=0.02, af_step=0.02, af_max=0.2)
+    )
     assert result is not None

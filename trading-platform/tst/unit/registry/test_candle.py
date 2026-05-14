@@ -13,7 +13,8 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
 from trading.registry.candle import CandleConfig, CandleRegistry, _bar_open_time
-from trading.storage.repository import Repository
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.candle import CandleDataStore
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -120,7 +121,12 @@ def make_registry(
         intervals=intervals,
         warmup_count=warmup_count,
     )
-    return CandleRegistry(config=config, broker=broker, session_factory=sf, repo=Repository())
+    return CandleRegistry(
+        config=config,
+        broker=broker,
+        candle=CandleDataStore(sf),
+        audit=AuditStore(sf),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -295,12 +301,14 @@ async def test_warmup_respects_warmup_count(engine: AsyncEngine) -> None:
 
 def test_ensure_utc_raises_on_non_datetime() -> None:
     from trading.registry.candle import _ensure_utc
+
     with pytest.raises(TypeError):
         _ensure_utc("2025-01-06")  # string, not datetime
 
 
 def test_ensure_utc_adds_utc_to_naive_datetime() -> None:
     from trading.registry.candle import _ensure_utc
+
     naive = datetime(2025, 1, 6, 9, 15)
     result = _ensure_utc(naive)
     assert result.tzinfo is not None
@@ -308,10 +316,16 @@ def test_ensure_utc_adds_utc_to_naive_datetime() -> None:
 
 async def test_warmup_invalid_row_logged_as_warning(engine: AsyncEngine) -> None:
     """Covers lines 160-161: a row with a non-datetime 'date' field is skipped."""
-    bad_df = pl.DataFrame({
-        "date": ["not-a-datetime"],  # string → _ensure_utc raises TypeError
-        "open": [100.0], "high": [105.0], "low": [99.0], "close": [102.0], "volume": [1000],
-    })
+    bad_df = pl.DataFrame(
+        {
+            "date": ["not-a-datetime"],  # string → _ensure_utc raises TypeError
+            "open": [100.0],
+            "high": [105.0],
+            "low": [99.0],
+            "close": [102.0],
+            "volume": [1000],
+        }
+    )
     broker = MockBroker(df=bad_df)
     reg = make_registry(broker, engine, warmup_count=5)
 
@@ -326,6 +340,7 @@ async def test_handle_with_tick_log_id_schedules_log_candle(engine: AsyncEngine)
 
     from trading.core.database import get_session
     from trading.core.models import Instrument
+
     async with get_session(engine) as s:
         s.add(Instrument(token=1, symbol="SYM1", exchange="NSE", instrument_type="EQUITY"))
 

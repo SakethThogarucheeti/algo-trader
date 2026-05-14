@@ -12,8 +12,10 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType, SignalEvent
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
-from trading.storage.repository import Repository
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.chart import ChartStore
+from trading.storage.stores.config import ConfigStore
 
 BASE_TIME = datetime(2025, 1, 6, 9, 15, tzinfo=UTC)
 
@@ -57,7 +59,12 @@ def make_registry(
     algos = _build_algos(instrument_strategy_map, instrument_types)
     store = PolarsStore()
     return AlgoRegistry(
-        config=config, session_factory=sf, repo=Repository(), algos=algos, store=store
+        config=config,
+        chart=ChartStore(sf),
+        config_store=ConfigStore(sf),
+        audit=AuditStore(sf),
+        algos=algos,
+        store=store,
     )
 
 
@@ -96,7 +103,13 @@ def test_registry_with_multiple_instruments(engine: AsyncEngine) -> None:
         instrument_types=instrument_types,
     )
     algos = _build_algos(instrument_strategy_map, instrument_types)
-    reg = AlgoRegistry(config=config, session_factory=sf, repo=Repository(), algos=algos)
+    reg = AlgoRegistry(
+        config=config,
+        chart=ChartStore(sf),
+        config_store=ConfigStore(sf),
+        audit=AuditStore(sf),
+        algos=algos,
+    )
     assert "INFY" in reg._algos
     assert "TCS" in reg._algos
 
@@ -148,7 +161,10 @@ async def test_handle_returns_signal_when_crossover(engine: AsyncEngine) -> None
     signals = []
     for i, price in enumerate(prices):
         candle = make_candle(
-            open=price, high=price + 1, low=price - 1, close=price,
+            open=price,
+            high=price + 1,
+            low=price - 1,
+            close=price,
             timestamp=BASE_TIME + dt.timedelta(minutes=i),
         )
         result = await reg.handle(candle)
@@ -174,7 +190,13 @@ async def test_handle_only_affects_matching_symbol(engine: AsyncEngine) -> None:
         warmup_candles=5,
     )
     algos = _build_algos(instrument_strategy_map, instrument_types)
-    reg = AlgoRegistry(config=config, session_factory=sf, repo=Repository(), algos=algos)
+    reg = AlgoRegistry(
+        config=config,
+        chart=ChartStore(sf),
+        config_store=ConfigStore(sf),
+        audit=AuditStore(sf),
+        algos=algos,
+    )
 
     await reg.handle(make_candle(symbol="INFY"))
 
@@ -205,7 +227,10 @@ async def test_handle_signal_with_nonzero_tick_log_id(engine: AsyncEngine) -> No
     signals = []
     for i, price in enumerate(prices):
         candle = make_candle(
-            open=price, high=price + 1, low=price - 1, close=price,
+            open=price,
+            high=price + 1,
+            low=price - 1,
+            close=price,
             timestamp=BASE_TIME + dt.timedelta(minutes=i),
             tick_log_id=i + 1,
         )
@@ -230,6 +255,7 @@ async def test_upsert_state_direct(engine: AsyncEngine) -> None:
 
 async def test_log_signal_skips_when_tick_log_id_zero(engine: AsyncEngine) -> None:
     from trading.core.schemas import Side, SignalType
+
     reg = make_registry(engine)
     signal_event = SignalEvent(
         symbol="INFY",
@@ -245,6 +271,7 @@ async def test_log_signal_skips_when_tick_log_id_zero(engine: AsyncEngine) -> No
 
 async def test_log_signal_with_nonzero_tick_log_id(engine: AsyncEngine) -> None:
     from trading.core.schemas import Side, SignalType
+
     reg = make_registry(engine)
     signal_event = SignalEvent(
         symbol="INFY",

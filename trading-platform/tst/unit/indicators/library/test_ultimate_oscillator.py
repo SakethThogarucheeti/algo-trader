@@ -11,7 +11,9 @@ from tst.unit.indicators.conftest import candles, make_ind
 @pytest.mark.asyncio
 async def test_returns_none_insufficient() -> None:
     ind = make_ind(UltimateOscillator, candles([100.0] * 10))
-    assert await ind.compute(UltimateOscillator.Parameters(period1=7, period2=14, period3=28)) is None
+    assert (
+        await ind.compute(UltimateOscillator.Parameters(period1=7, period2=14, period3=28)) is None
+    )
 
 
 @pytest.mark.asyncio

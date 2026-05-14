@@ -37,15 +37,29 @@ async def test_nonnegative() -> None:
 @pytest.mark.asyncio
 async def test_higher_volatility_gives_higher_atr() -> None:
     low_vol = [
-        {"symbol": "T", "interval": "15min",
-         "ts": datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * i),
-         "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0, "volume": 1000}
+        {
+            "symbol": "T",
+            "interval": "15min",
+            "ts": datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * i),
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.0,
+            "volume": 1000,
+        }
         for i in range(50)
     ]
     high_vol = [
-        {"symbol": "T", "interval": "15min",
-         "ts": datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * i),
-         "open": 100.0, "high": 105.0, "low": 95.0, "close": 100.0, "volume": 1000}
+        {
+            "symbol": "T",
+            "interval": "15min",
+            "ts": datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * i),
+            "open": 100.0,
+            "high": 105.0,
+            "low": 95.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
         for i in range(50)
     ]
 

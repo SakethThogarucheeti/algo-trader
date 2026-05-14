@@ -21,9 +21,18 @@ def _store(rows):
 
 @pytest.mark.asyncio
 async def test_returns_none_single_bar() -> None:
-    rows = [{"symbol": "X", "interval": "1day",
-             "ts": datetime(2024, 1, 1, tzinfo=UTC),
-             "open": 100.0, "high": 110.0, "low": 90.0, "close": 105.0, "volume": 1000}]
+    rows = [
+        {
+            "symbol": "X",
+            "interval": "1day",
+            "ts": datetime(2024, 1, 1, tzinfo=UTC),
+            "open": 100.0,
+            "high": 110.0,
+            "low": 90.0,
+            "close": 105.0,
+            "volume": 1000,
+        }
+    ]
     ind = PivotPoints(_store(rows), "X", "1day")
     assert await ind.compute(PivotPoints.Parameters()) is None
 
@@ -31,12 +40,26 @@ async def test_returns_none_single_bar() -> None:
 @pytest.mark.asyncio
 async def test_full_levels() -> None:
     rows = [
-        {"symbol": "X", "interval": "1day",
-         "ts": datetime(2024, 1, 1, tzinfo=UTC),
-         "open": 100.0, "high": 110.0, "low": 90.0, "close": 100.0, "volume": 1000},
-        {"symbol": "X", "interval": "1day",
-         "ts": datetime(2024, 1, 2, tzinfo=UTC),
-         "open": 101.0, "high": 112.0, "low": 92.0, "close": 105.0, "volume": 1000},
+        {
+            "symbol": "X",
+            "interval": "1day",
+            "ts": datetime(2024, 1, 1, tzinfo=UTC),
+            "open": 100.0,
+            "high": 110.0,
+            "low": 90.0,
+            "close": 100.0,
+            "volume": 1000,
+        },
+        {
+            "symbol": "X",
+            "interval": "1day",
+            "ts": datetime(2024, 1, 2, tzinfo=UTC),
+            "open": 101.0,
+            "high": 112.0,
+            "low": 92.0,
+            "close": 105.0,
+            "volume": 1000,
+        },
     ]
     ind = PivotPoints(_store(rows), "X", "1day")
     result = await ind.compute_full(PivotPoints.Parameters())

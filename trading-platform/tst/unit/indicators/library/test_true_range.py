@@ -33,10 +33,22 @@ def test_fn_no_gaps() -> None:
 @pytest.mark.asyncio
 async def test_no_gaps() -> None:
     rows = [
-        {"open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0, "volume": 100,
-         "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC)},
-        {"open": 11.0, "high": 13.0, "low": 10.0, "close": 12.0, "volume": 100,
-         "ts": datetime(2024, 1, 1, 9, 30, tzinfo=UTC)},
+        {
+            "open": 10.0,
+            "high": 12.0,
+            "low": 9.0,
+            "close": 11.0,
+            "volume": 100,
+            "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC),
+        },
+        {
+            "open": 11.0,
+            "high": 13.0,
+            "low": 10.0,
+            "close": 12.0,
+            "volume": 100,
+            "ts": datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
+        },
     ]
     ind = TrueRange(_store(rows), "X", "1min")
     result = await ind.compute(TrueRange.Parameters())
@@ -46,8 +58,16 @@ async def test_no_gaps() -> None:
 
 @pytest.mark.asyncio
 async def test_returns_none_single_bar() -> None:
-    rows = [{"open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0, "volume": 100,
-             "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC)}]
+    rows = [
+        {
+            "open": 10.0,
+            "high": 12.0,
+            "low": 9.0,
+            "close": 11.0,
+            "volume": 100,
+            "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC),
+        }
+    ]
     ind = TrueRange(_store(rows), "X", "1min")
     assert await ind.compute(TrueRange.Parameters()) is None
 
@@ -55,10 +75,22 @@ async def test_returns_none_single_bar() -> None:
 @pytest.mark.asyncio
 async def test_gap_up() -> None:
     rows = [
-        {"open": 9.0, "high": 11.0, "low": 9.0, "close": 10.0, "volume": 100,
-         "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC)},
-        {"open": 13.0, "high": 15.0, "low": 12.0, "close": 14.0, "volume": 100,
-         "ts": datetime(2024, 1, 1, 9, 30, tzinfo=UTC)},
+        {
+            "open": 9.0,
+            "high": 11.0,
+            "low": 9.0,
+            "close": 10.0,
+            "volume": 100,
+            "ts": datetime(2024, 1, 1, 9, 15, tzinfo=UTC),
+        },
+        {
+            "open": 13.0,
+            "high": 15.0,
+            "low": 12.0,
+            "close": 14.0,
+            "volume": 100,
+            "ts": datetime(2024, 1, 1, 9, 30, tzinfo=UTC),
+        },
     ]
     ind = TrueRange(_store(rows), "X", "1min")
     result = await ind.compute(TrueRange.Parameters())

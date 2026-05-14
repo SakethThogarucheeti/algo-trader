@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import httpx
 import pytest
-import anyio
 from anyio import create_task_group
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -16,7 +16,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.models import Heartbeat
 from trading.engine.heartbeat import HeartbeatMonitor
 from trading.monitoring.telegram import TelegramAlerter
-from trading.storage.repository import Repository
+from trading.storage.stores.heartbeat import HeartbeatStore
 
 
 def make_settings(token: str | None = "BOT_TOKEN", chat_id: str | None = "CHAT_ID") -> Settings:
@@ -194,25 +194,27 @@ async def engine() -> AsyncEngine:
 
 
 @pytest.fixture
-def repo() -> Repository:
-    return Repository()
+def heartbeat_store(engine: AsyncEngine) -> HeartbeatStore:
+    sf = build_session_factory(engine)
+    return HeartbeatStore(sf)
 
 
-async def test_beat_loop_calls_update_heartbeat(engine: AsyncEngine, repo: Repository) -> None:
+async def test_beat_loop_calls_update_heartbeat(engine: AsyncEngine, heartbeat_store: HeartbeatStore) -> None:
     """_beat_loop must write a heartbeat row on each tick."""
     sf = build_session_factory(engine)
     calls: list[str] = []
 
-    original = repo.update_heartbeat
+    original = heartbeat_store.update_heartbeat
 
-    async def _spy(session, module: str) -> None:
+    async def _spy(module: str) -> None:
         calls.append(module)
-        return await original(session, module)
+        return await original(module)
 
-    repo.update_heartbeat = _spy  # type: ignore[method-assign]
+    heartbeat_store.update_heartbeat = _spy  # type: ignore[method-assign]
 
     monitor = HeartbeatMonitor(
-        repo, sf,
+        heartbeat_store,
+        sf,
         component_names=["hb_test"],
         beat_interval_secs=1,
         timeout_secs=30,
@@ -231,13 +233,14 @@ async def test_beat_loop_calls_update_heartbeat(engine: AsyncEngine, repo: Repos
     assert "heartbeat_monitor" in calls, "beat loop must call update_heartbeat"
 
 
-async def test_monitor_loop_checks_stale_immediately(engine: AsyncEngine, repo: Repository) -> None:
+async def test_monitor_loop_checks_stale_immediately(engine: AsyncEngine, heartbeat_store: HeartbeatStore) -> None:
     """_check_stale should be called immediately on startup (before first sleep)."""
     sf = build_session_factory(engine)
     check_calls: list[int] = []
 
     monitor = HeartbeatMonitor(
-        repo, sf,
+        heartbeat_store,
+        sf,
         component_names=["hb_test"],
         beat_interval_secs=60,
         timeout_secs=60,
@@ -261,7 +264,7 @@ async def test_monitor_loop_checks_stale_immediately(engine: AsyncEngine, repo: 
     assert len(check_calls) >= 1, "immediate stale check must fire before first sleep"
 
 
-async def test_alerter_called_for_stale_module(engine: AsyncEngine, repo: Repository) -> None:
+async def test_alerter_called_for_stale_module(engine: AsyncEngine, heartbeat_store: HeartbeatStore) -> None:
     """When a monitored module has a stale heartbeat, alerter is called."""
     sf = build_session_factory(engine)
     alerted: list[str] = []
@@ -270,7 +273,8 @@ async def test_alerter_called_for_stale_module(engine: AsyncEngine, repo: Reposi
         alerted.append(module)
 
     monitor = HeartbeatMonitor(
-        repo, sf,
+        heartbeat_store,
+        sf,
         component_names=["dead_module"],
         beat_interval_secs=60,
         timeout_secs=5,
@@ -292,23 +296,24 @@ async def test_alerter_called_for_stale_module(engine: AsyncEngine, repo: Reposi
 async def test_beat_loop_survives_db_failure(engine: AsyncEngine) -> None:
     """A DB failure in _beat_loop must not crash the loop."""
     sf = build_session_factory(engine)
-    repo = Repository()
+    heartbeat_store = HeartbeatStore(sf)
     error_count = [0]
     call_count = [0]
 
-    original = repo.update_heartbeat
+    original = heartbeat_store.update_heartbeat
 
-    async def _fail_first(session, module: str) -> None:
+    async def _fail_first(module: str) -> None:
         call_count[0] += 1
         if call_count[0] == 1:
             error_count[0] += 1
             raise RuntimeError("simulated DB failure")
-        return await original(session, module)
+        return await original(module)
 
-    repo.update_heartbeat = _fail_first  # type: ignore[method-assign]
+    heartbeat_store.update_heartbeat = _fail_first  # type: ignore[method-assign]
 
     monitor = HeartbeatMonitor(
-        repo, sf,
+        heartbeat_store,
+        sf,
         component_names=["hb_test"],
         beat_interval_secs=0,
         timeout_secs=30,

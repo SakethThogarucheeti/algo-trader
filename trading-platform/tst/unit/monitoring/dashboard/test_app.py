@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from trading.core.clock import SimulatedClock
 from trading.monitoring.dashboard.app import build_app
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build a mock session_factory
 # ---------------------------------------------------------------------------
@@ -257,10 +256,15 @@ async def test_ticks_empty():
 @pytest.mark.asyncio
 async def test_pnl_empty():
     sf = _mock_sf(all_return=[])
-    async with await _client(sf) as client:
-        resp = await client.get("/api/pnl")
+    with patch("trading.reports.fetch.fetch_nifty_benchmark", new=AsyncMock(return_value=None)):
+        async with await _client(sf) as client:
+            resp = await client.get("/api/pnl")
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert data["points"] == []
+    assert data["summary"]["gross"] == 0.0
+    assert data["summary"]["net"] == 0.0
+    assert data["summary"]["nifty_pct"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -271,9 +275,7 @@ async def test_pnl_empty():
 @pytest.mark.asyncio
 async def test_algos_empty():
     sf = _mock_sf(scalars_return=[])
-    with patch("trading.storage.repository.Repository") as MockRepo:
-        mock_repo = MockRepo.return_value
-        mock_repo.get_algo_configs_with_state = AsyncMock(return_value=[])
+    with patch("trading.storage.stores.config.ConfigStore.get_algo_configs_with_state", new=AsyncMock(return_value=[])):
         async with await _client(sf) as client:
             resp = await client.get("/api/algos")
     assert resp.status_code == 200
@@ -296,9 +298,7 @@ async def test_algos_with_data():
         },
     }
     sf = _mock_sf(scalars_return=[])
-    with patch("trading.storage.repository.Repository") as MockRepo:
-        mock_repo = MockRepo.return_value
-        mock_repo.get_algo_configs_with_state = AsyncMock(return_value=[algo])
+    with patch("trading.storage.stores.config.ConfigStore.get_algo_configs_with_state", new=AsyncMock(return_value=[algo])):
         async with await _client(sf) as client:
             resp = await client.get("/api/algos")
     assert resp.status_code == 200

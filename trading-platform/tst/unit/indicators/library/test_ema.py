@@ -32,5 +32,5 @@ async def test_uptrend_lags_price() -> None:
 
 
 def test_period_zero_raises() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         EMA.Parameters(period=0)

@@ -155,11 +155,18 @@ async def test_fetch_signals_returns_empty_on_empty_db(engine: AsyncEngine) -> N
 
 async def test_fetch_signals_returns_signals_in_window(engine: AsyncEngine) -> None:
     async with get_session(engine) as s:
-        s.add(Signal(
-            id=uuid4(), strategy_id="ema", symbol="INFY",
-            instrument_type="EQUITY", side="BUY", signal_type="ENTRY",
-            stop_distance=Decimal("10"), created_at=NOW,
-        ))
+        s.add(
+            Signal(
+                id=uuid4(),
+                strategy_id="ema",
+                symbol="INFY",
+                instrument_type="EQUITY",
+                side="BUY",
+                signal_type="ENTRY",
+                stop_distance=Decimal("10"),
+                created_at=NOW,
+            )
+        )
 
     sf = build_session_factory(engine)
     async with sf() as session:
@@ -170,11 +177,18 @@ async def test_fetch_signals_returns_signals_in_window(engine: AsyncEngine) -> N
 async def test_fetch_signals_excludes_outside_window(engine: AsyncEngine) -> None:
     old = NOW - timedelta(hours=3)
     async with get_session(engine) as s:
-        s.add(Signal(
-            id=uuid4(), strategy_id="ema", symbol="INFY",
-            instrument_type="EQUITY", side="BUY", signal_type="ENTRY",
-            stop_distance=Decimal("10"), created_at=old,
-        ))
+        s.add(
+            Signal(
+                id=uuid4(),
+                strategy_id="ema",
+                symbol="INFY",
+                instrument_type="EQUITY",
+                side="BUY",
+                signal_type="ENTRY",
+                stop_distance=Decimal("10"),
+                created_at=old,
+            )
+        )
 
     sf = build_session_factory(engine)
     async with sf() as session:
@@ -245,14 +259,16 @@ async def test_fetch_algo_configs_returns_config_with_state(engine: AsyncEngine)
 
 async def test_fetch_algo_configs_without_state(engine: AsyncEngine) -> None:
     async with get_session(engine) as s:
-        s.add(AlgoConfig(
-            name="solo",
-            strategy_id="ema_crossover",
-            warmup_candles=100,
-            candle_intervals=json.dumps(["5min"]),
-            equity=5000.0,
-            params=json.dumps({}),
-        ))
+        s.add(
+            AlgoConfig(
+                name="solo",
+                strategy_id="ema_crossover",
+                warmup_candles=100,
+                candle_intervals=json.dumps(["5min"]),
+                equity=5000.0,
+                params=json.dumps({}),
+            )
+        )
 
     sf = build_session_factory(engine)
     async with sf() as session:
@@ -332,8 +348,11 @@ def test_print_strategy_section_with_data(capsys) -> None:
     d_rej.context = json.dumps({"reason": "AFTER_CUTOFF"})
 
     algo_cfg = {
-        "name": "default", "strategy_id": "ema_crossover", "equity": 10000.0,
-        "enabled": True, "warmup_candles": 200,
+        "name": "default",
+        "strategy_id": "ema_crossover",
+        "equity": 10000.0,
+        "enabled": True,
+        "warmup_candles": 200,
         "params": {"fast": 9, "slow": 21},
         "state": {"bars_seen": 50, "warmup_complete": True},
     }
