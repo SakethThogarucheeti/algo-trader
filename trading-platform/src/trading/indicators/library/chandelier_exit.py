@@ -46,13 +46,13 @@ class ChandelierExit(Indicator):
         if len(rows) < params.period + 1:
             return None
 
-        highs  = np.array([r["high"]  for r in rows], dtype=float)
-        lows   = np.array([r["low"]   for r in rows], dtype=float)
+        highs = np.array([r["high"] for r in rows], dtype=float)
+        lows = np.array([r["low"] for r in rows], dtype=float)
         closes = np.array([r["close"] for r in rows], dtype=float)
 
         tr = true_range(highs, lows, closes)
-        atr = wilder_ema(tr[-params.period:], params.period)
-        highest_high = float(np.max(highs[-params.period:]))
+        atr = wilder_ema(tr[-params.period :], params.period)
+        highest_high = float(np.max(highs[-params.period :]))
         chandelier = highest_high - atr * params.multiplier
 
         current_close = closes[-1]

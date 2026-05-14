@@ -40,12 +40,14 @@ class InsideBar(Indicator):
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]
-        rows = await self._store.fetch(self._symbol, self._interval, (params.period + 1) * _LOOKBACK)
+        rows = await self._store.fetch(
+            self._symbol, self._interval, (params.period + 1) * _LOOKBACK
+        )
         if len(rows) < params.period + 1:
             return None
 
-        highs = np.array([r["high"] for r in rows[-(params.period + 1):]], dtype=float)
-        lows  = np.array([r["low"]  for r in rows[-(params.period + 1):]], dtype=float)
+        highs = np.array([r["high"] for r in rows[-(params.period + 1) :]], dtype=float)
+        lows = np.array([r["low"] for r in rows[-(params.period + 1) :]], dtype=float)
 
         count = 0
         for i in range(1, params.period + 1):

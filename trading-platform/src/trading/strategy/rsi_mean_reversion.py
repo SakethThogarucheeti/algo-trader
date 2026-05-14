@@ -61,8 +61,12 @@ class RsiMeanReversionStrategy(Strategy):
 
     def get_state(self) -> dict[str, object]:
         return {
-            f"rsi_{self._rsi_period}": round(self._last_rsi, 2) if self._last_rsi is not None else None,
-            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
+            f"rsi_{self._rsi_period}": round(self._last_rsi, 2)
+            if self._last_rsi is not None
+            else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4)
+            if self._last_atr is not None
+            else None,
             "oversold": self._oversold,
             "overbought": self._overbought,
         }
@@ -95,22 +99,38 @@ class RsiMeanReversionStrategy(Strategy):
         stop_distance = self._atr_multiplier * atr
 
         if prev_rsi <= self._oversold and rsi > self._oversold:
-            logger.info("RsiMeanReversion[%s]: BUY  rsi=%.1f→%.1f stop=%.4f",
-                        symbol, prev_rsi, rsi, stop_distance)
+            logger.info(
+                "RsiMeanReversion[%s]: BUY  rsi=%.1f→%.1f stop=%.4f",
+                symbol,
+                prev_rsi,
+                rsi,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.BUY, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.BUY,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 
         if prev_rsi >= self._overbought and rsi < self._overbought:
-            logger.info("RsiMeanReversion[%s]: SELL rsi=%.1f→%.1f stop=%.4f",
-                        symbol, prev_rsi, rsi, stop_distance)
+            logger.info(
+                "RsiMeanReversion[%s]: SELL rsi=%.1f→%.1f stop=%.4f",
+                symbol,
+                prev_rsi,
+                rsi,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.SELL, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.SELL,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 

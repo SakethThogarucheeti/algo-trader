@@ -6,16 +6,15 @@ import logging
 import math
 from datetime import time
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
 from trading.indicators.library.atr import ATR
 from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)
 
-_IST = ZoneInfo("Asia/Kolkata")
-_SESSION_OPEN_IST = time(9, 15)
+_SESSION_OPEN = time(9, 15)
 
 
 class OpeningRangeBreakoutStrategy(Strategy):
@@ -36,6 +35,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
         atr_period: int = 14,
         atr_multiplier: float = 1.5,
         interval_minutes: int = 15,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         if orb_bars < 1:
             raise ValueError(f"orb_bars must be >= 1, got {orb_bars}")
@@ -43,6 +43,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._atr_period = atr_period
         self._atr_multiplier = atr_multiplier
         self._interval_minutes = interval_minutes
+        self._clock = clock
         self._store: Any = None
         # indicator cache: symbol → atr
         self._inds: dict[str, ATR] = {}
@@ -63,9 +64,15 @@ class OpeningRangeBreakoutStrategy(Strategy):
 
     def get_state(self) -> dict[str, object]:
         return {
-            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
-            "or_high": round(self._last_or_high, 2) if self._last_or_high is not None and not math.isinf(self._last_or_high) else None,
-            "or_low": round(self._last_or_low, 2) if self._last_or_low is not None and not math.isinf(self._last_or_low) else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4)
+            if self._last_atr is not None
+            else None,
+            "or_high": round(self._last_or_high, 2)
+            if self._last_or_high is not None and not math.isinf(self._last_or_high)
+            else None,
+            "or_low": round(self._last_or_low, 2)
+            if self._last_or_low is not None and not math.isinf(self._last_or_low)
+            else None,
         }
 
     async def on_candle(
@@ -81,11 +88,11 @@ class OpeningRangeBreakoutStrategy(Strategy):
         if atr is None or atr <= 0:
             return None
 
-        ts_ist = candle.timestamp.astimezone(_IST)
-        cur_ist = ts_ist.time()
-        cur_date = ts_ist.date()
+        ts_local = candle.timestamp.astimezone(self._clock.tz)
+        cur_ist = ts_local.time()
+        cur_date = ts_local.date()
 
-        session_open_min = _SESSION_OPEN_IST.hour * 60 + _SESSION_OPEN_IST.minute
+        session_open_min = _SESSION_OPEN.hour * 60 + _SESSION_OPEN.minute
         or_end_min = session_open_min + self._orb_bars * self._interval_minutes
         or_end_ist = time(or_end_min // 60, or_end_min % 60)
 
@@ -111,23 +118,39 @@ class OpeningRangeBreakoutStrategy(Strategy):
 
         if candle.close > or_high:
             self._state[symbol] = (cur_date, or_high, or_low, True)
-            logger.info("ORB[%s]: BUY  close=%.2f > OR_high=%.2f stop=%.4f",
-                        symbol, candle.close, or_high, stop_distance)
+            logger.info(
+                "ORB[%s]: BUY  close=%.2f > OR_high=%.2f stop=%.4f",
+                symbol,
+                candle.close,
+                or_high,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.BUY, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.BUY,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 
         if candle.close < or_low:
             self._state[symbol] = (cur_date, or_high, or_low, True)
-            logger.info("ORB[%s]: SELL close=%.2f < OR_low=%.2f stop=%.4f",
-                        symbol, candle.close, or_low, stop_distance)
+            logger.info(
+                "ORB[%s]: SELL close=%.2f < OR_low=%.2f stop=%.4f",
+                symbol,
+                candle.close,
+                or_low,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.SELL, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.SELL,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 

@@ -46,15 +46,15 @@ class WeeklyRSI(Indicator):
 
         closes = np.array([r["close"] for r in rows], dtype=float)
         # Sample weekly closes (last bar of each week window)
-        weekly = closes[params.week_bars - 1::params.week_bars]
+        weekly = closes[params.week_bars - 1 :: params.week_bars]
         if len(weekly) < params.rsi_period + 1:
             return None
 
         deltas = np.diff(weekly)
-        gains  = np.where(deltas > 0, deltas, 0.0)
+        gains = np.where(deltas > 0, deltas, 0.0)
         losses = np.where(deltas < 0, -deltas, 0.0)
-        avg_gain = float(np.mean(gains[:params.rsi_period]))
-        avg_loss = float(np.mean(losses[:params.rsi_period]))
+        avg_gain = float(np.mean(gains[: params.rsi_period]))
+        avg_loss = float(np.mean(losses[: params.rsi_period]))
         for i in range(params.rsi_period, len(weekly) - 1):
             avg_gain = (avg_gain * (params.rsi_period - 1) + gains[i]) / params.rsi_period
             avg_loss = (avg_loss * (params.rsi_period - 1) + losses[i]) / params.rsi_period

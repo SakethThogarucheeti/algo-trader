@@ -68,14 +68,15 @@ class SqueezeMomentum(Indicator):
         window_c = closes[-params.period :]
         sma = float(np.mean(window_c))
         std = float(np.std(window_c, ddof=1))
-        bb_upper = sma + params.bb_k * std
-        bb_lower = sma - params.bb_k * std
 
         # Keltner Channels
         tr = true_range(highs, lows, closes)
         atr = wilder_ema(tr[-params.period :], params.period)
-        kc_upper = sma + params.kc_k * atr
-        kc_lower = sma - params.kc_k * atr
+
+        # squeeze_on = BB inside KC — available for callers that inspect squeeze state
+        self._squeeze_on = (sma + params.bb_k * std) <= (sma + params.kc_k * atr) and (
+            sma - params.bb_k * std
+        ) >= (sma - params.kc_k * atr)
 
         # Momentum: linear regression value of delta
         hh = float(np.max(highs[-params.period :]))

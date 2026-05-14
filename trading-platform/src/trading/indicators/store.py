@@ -8,7 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.candle import CandleDataStore
 
 _log = logging.getLogger(__name__)
 
@@ -32,11 +32,11 @@ class CandleStore:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        candle_store: CandleDataStore,
         redis: object | None = None,
     ) -> None:
         self._sf = session_factory
-        self._repo = repo
+        self._candle = candle_store
         self._redis = redis  # redis.asyncio.Redis instance or None
 
     # ------------------------------------------------------------------
@@ -48,7 +48,7 @@ class CandleStore:
         cache_key = f"cs:candles:{symbol}:{interval}:n{limit}"
         return await self._get_or_fetch(
             cache_key,
-            lambda session: self._repo.get_candles(session, symbol, interval, limit),
+            lambda: self._candle.get_candles(symbol, interval, limit),
         )
 
     async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[dict]:
@@ -56,7 +56,7 @@ class CandleStore:
         cache_key = f"cs:candles:{symbol}:{interval}:since:{since.isoformat()}"
         return await self._get_or_fetch(
             cache_key,
-            lambda session: self._repo.get_candles_since(session, symbol, interval, since),
+            lambda: self._candle.get_candles_since(symbol, interval, since),
         )
 
     # ------------------------------------------------------------------
@@ -72,8 +72,7 @@ class CandleStore:
             except Exception as exc:
                 _log.debug("CandleStore: Redis get failed for %r — %s", key, exc)
 
-        async with self._sf() as session:
-            rows = await query(session)
+        rows = await query()
 
         if self._redis is not None and rows:
             try:

@@ -39,9 +39,7 @@ class MFI(Indicator):
         if len(rows) < params.period + 1:
             return None
 
-        tp = np.array(
-            [(r["high"] + r["low"] + r["close"]) / 3.0 for r in rows], dtype=float
-        )
+        tp = np.array([(r["high"] + r["low"] + r["close"]) / 3.0 for r in rows], dtype=float)
         vol = np.array([r["volume"] for r in rows], dtype=float)
         raw_mf = tp * vol
 

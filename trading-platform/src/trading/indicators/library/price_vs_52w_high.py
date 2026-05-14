@@ -42,7 +42,7 @@ class PriceVs52wHigh(Indicator):
         if len(rows) < params.period:
             return None
 
-        highs  = np.array([r["high"]  for r in rows[-params.period:]], dtype=float)
+        highs = np.array([r["high"] for r in rows[-params.period :]], dtype=float)
         closes = np.array([r["close"] for r in rows], dtype=float)
 
         peak = float(np.max(highs))

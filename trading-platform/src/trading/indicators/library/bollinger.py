@@ -37,7 +37,9 @@ class BollingerBands(Indicator):
         result = await self.compute_full(params)
         return result[4] if result is not None else None  # percent_b
 
-    async def compute_full(self, params: Parameters) -> tuple[float, float, float, float, float] | None:
+    async def compute_full(
+        self, params: Parameters
+    ) -> tuple[float, float, float, float, float] | None:
         rows = await self._store.fetch(self._symbol, self._interval, params.period)
         if len(rows) < params.period:
             return None

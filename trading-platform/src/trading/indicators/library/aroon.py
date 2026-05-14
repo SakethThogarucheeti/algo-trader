@@ -40,21 +40,23 @@ class Aroon(Indicator):
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]
-        rows = await self._store.fetch(self._symbol, self._interval, (params.period + 1) * _LOOKBACK)
+        rows = await self._store.fetch(
+            self._symbol, self._interval, (params.period + 1) * _LOOKBACK
+        )
         if len(rows) < params.period + 1:
             return None
 
         highs = np.array([r["high"] for r in rows], dtype=float)
-        lows  = np.array([r["low"]  for r in rows], dtype=float)
+        lows = np.array([r["low"] for r in rows], dtype=float)
 
-        window_h = highs[-(params.period + 1):]
-        window_l = lows[-(params.period + 1):]
+        window_h = highs[-(params.period + 1) :]
+        window_l = lows[-(params.period + 1) :]
 
         bars_since_high = params.period - int(np.argmax(window_h))
-        bars_since_low  = params.period - int(np.argmin(window_l))
+        bars_since_low = params.period - int(np.argmin(window_l))
 
-        aroon_up   = (params.period - bars_since_high) / params.period * 100.0
-        aroon_down = (params.period - bars_since_low)  / params.period * 100.0
+        aroon_up = (params.period - bars_since_high) / params.period * 100.0
+        aroon_down = (params.period - bars_since_low) / params.period * 100.0
         return float(aroon_up - aroon_down)
 
     def __repr__(self) -> str:

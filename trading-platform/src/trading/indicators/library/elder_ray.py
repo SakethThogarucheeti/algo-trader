@@ -52,13 +52,13 @@ class ElderRay(Indicator):
         if len(rows) < params.period:
             return None
 
-        highs  = np.array([r["high"]  for r in rows], dtype=float)
-        lows   = np.array([r["low"]   for r in rows], dtype=float)
+        highs = np.array([r["high"] for r in rows], dtype=float)
+        lows = np.array([r["low"] for r in rows], dtype=float)
         closes = np.array([r["close"] for r in rows], dtype=float)
 
         ema = _ema(closes, params.period)
         bull_power = highs[-1] - ema
-        bear_power = lows[-1]  - ema
+        bear_power = lows[-1] - ema
         return float(bull_power + bear_power)
 
     def __repr__(self) -> str:

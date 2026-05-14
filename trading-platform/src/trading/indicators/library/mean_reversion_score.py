@@ -67,7 +67,7 @@ class MeanReversionScore(Indicator):
         closes = np.array([r["close"] for r in rows], dtype=float)
 
         # Z-score component
-        window = closes[-params.period:]
+        window = closes[-params.period :]
         sma = float(np.mean(window))
         std = float(np.std(window, ddof=1))
         if std == 0:
@@ -76,7 +76,7 @@ class MeanReversionScore(Indicator):
         z_pct = float(np.clip((z + 3) / 6 * 100, 0, 100))
 
         # RSI component
-        rsi = _rsi_scalar(closes[-(params.rsi_period + 10):], params.rsi_period)
+        rsi = _rsi_scalar(closes[-(params.rsi_period + 10) :], params.rsi_period)
         if rsi is None:
             return None
 

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import time
 from typing import TYPE_CHECKING
 
-from datetime import UTC, datetime, time, timedelta
-
 import numpy as np
-from pydantic import Field
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.indicators.base import Indicator, IndicatorParameters
@@ -15,20 +13,7 @@ from trading.indicators.base import Indicator, IndicatorParameters
 if TYPE_CHECKING:
     from trading.indicators.store import CandleStore
 
-_SESSION_OPEN_IST = time(9, 15)
-_IST_OFFSET = timedelta(hours=5, minutes=30)
-
-
-def _today_session_open_utc(now: datetime) -> datetime:
-    ist_now = now + _IST_OFFSET
-    return (
-        datetime(
-            ist_now.year, ist_now.month, ist_now.day,
-            _SESSION_OPEN_IST.hour, _SESSION_OPEN_IST.minute,
-            tzinfo=UTC,
-        )
-        - _IST_OFFSET
-    )
+_SESSION_OPEN = time(9, 15)
 
 
 class SessionHighLowPct(Indicator):
@@ -46,12 +31,14 @@ class SessionHighLowPct(Indicator):
 
     alias = "session_hl_pct"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str, clock: Clock = SYSTEM_CLOCK) -> None:
+    def __init__(
+        self, store: CandleStore, symbol: str, interval: str, clock: Clock = SYSTEM_CLOCK
+    ) -> None:
         super().__init__(store, symbol, interval)
         self._clock = clock
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]
-        since = _today_session_open_utc(self._clock.now())
+        since = self._clock.session_open_utc(_SESSION_OPEN)
         rows = await self._store.fetch_since(self._symbol, self._interval, since)
         if len(rows) < 2:
             return None

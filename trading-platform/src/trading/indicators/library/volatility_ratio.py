@@ -9,7 +9,6 @@ from pydantic import Field
 
 from trading.indicators.base import Indicator, IndicatorParameters
 from trading.indicators.library.true_range import true_range
-from trading.indicators.library.wilder_ema import wilder_ema
 
 if TYPE_CHECKING:
     from trading.indicators.store import CandleStore

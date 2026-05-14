@@ -74,10 +74,16 @@ class EmaCrossoverStrategy(Strategy):
 
     def get_state(self) -> dict[str, object]:
         return {
-            f"ema_{self._fast_period}": round(self._last_fast, 4) if self._last_fast is not None else None,
-            f"ema_{self._slow_period}": round(self._last_slow, 4) if self._last_slow is not None else None,
-            f"atr_{self._atr_period}":  round(self._last_atr,  4) if self._last_atr  is not None else None,
-            "last_close":               round(self._last_close, 2) if self._last_close is not None else None,
+            f"ema_{self._fast_period}": round(self._last_fast, 4)
+            if self._last_fast is not None
+            else None,
+            f"ema_{self._slow_period}": round(self._last_slow, 4)
+            if self._last_slow is not None
+            else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4)
+            if self._last_atr is not None
+            else None,
+            "last_close": round(self._last_close, 2) if self._last_close is not None else None,
         }
 
     async def on_candle(
@@ -120,22 +126,42 @@ class EmaCrossoverStrategy(Strategy):
         stop_distance = self._atr_multiplier * atr
 
         if prev_fast < prev_slow and fast > slow:
-            logger.info("EmaCrossover[%s]: BUY  fast=%.4f→%.4f slow=%.4f→%.4f stop=%.4f",
-                        symbol, prev_fast, fast, prev_slow, slow, stop_distance)
+            logger.info(
+                "EmaCrossover[%s]: BUY  fast=%.4f→%.4f slow=%.4f→%.4f stop=%.4f",
+                symbol,
+                prev_fast,
+                fast,
+                prev_slow,
+                slow,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.BUY, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.BUY,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 
         if prev_fast > prev_slow and fast < slow:
-            logger.info("EmaCrossover[%s]: SELL fast=%.4f→%.4f slow=%.4f→%.4f stop=%.4f",
-                        symbol, prev_fast, fast, prev_slow, slow, stop_distance)
+            logger.info(
+                "EmaCrossover[%s]: SELL fast=%.4f→%.4f slow=%.4f→%.4f stop=%.4f",
+                symbol,
+                prev_fast,
+                fast,
+                prev_slow,
+                slow,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.SELL, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.SELL,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 

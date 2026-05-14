@@ -39,9 +39,7 @@ class NormalizedATR(Indicator):
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]
-        rows = await self._store.fetch(
-            self._symbol, self._interval, params.period * _LOOKBACK
-        )
+        rows = await self._store.fetch(self._symbol, self._interval, params.period * _LOOKBACK)
         if len(rows) < params.period + 1:
             return None
 

@@ -82,7 +82,7 @@ class Strategy(ABC):
         """Alias of this strategy instance (delegates to the class attribute)."""
         return self.__class__.alias  # type: ignore[attr-defined]
 
-    def set_store(self, store: object) -> None:
+    def set_store(self, store: object) -> None:  # noqa: B027
         """
         Called by AlgoRegistry before the first on_candle to supply the data store.
 

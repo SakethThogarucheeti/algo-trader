@@ -8,7 +8,6 @@ import numpy as np
 from pydantic import Field
 
 from trading.indicators.base import Indicator, IndicatorParameters
-from trading.indicators.library.wilder_ema import wilder_ema
 
 if TYPE_CHECKING:
     from trading.indicators.store import CandleStore
@@ -71,7 +70,7 @@ class StochasticRSI(Indicator):
         if len(valid) < params.stoch_period:
             return None
 
-        window = valid[-params.stoch_period:]
+        window = valid[-params.stoch_period :]
         lo, hi = float(np.min(window)), float(np.max(window))
         if hi == lo:
             return None

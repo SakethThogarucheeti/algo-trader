@@ -86,7 +86,7 @@ class ConnorsRSI(Indicator):
         if len(roc) < params.rank_period + 1:
             return None
         current_roc = roc[-1]
-        window_roc = roc[-(params.rank_period + 1):-1]
+        window_roc = roc[-(params.rank_period + 1) : -1]
         pct_rank = float(np.sum(window_roc < current_roc) / len(window_roc) * 100.0)
 
         return (price_rsi + streak_rsi + pct_rank) / 3.0

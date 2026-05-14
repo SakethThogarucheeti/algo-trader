@@ -43,7 +43,7 @@ class DistanceFromMA(Indicator):
             return None
 
         closes = np.array([r["close"] for r in rows], dtype=float)
-        sma = float(np.mean(closes[-params.period:]))
+        sma = float(np.mean(closes[-params.period :]))
         if sma == 0:
             return None
         return float((closes[-1] - sma) / sma * 100.0)

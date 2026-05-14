@@ -4,17 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from datetime import timedelta
-
-from pydantic import Field
-
 from trading.indicators.base import Indicator, IndicatorParameters
 
 if TYPE_CHECKING:
     from trading.indicators.store import CandleStore
-
-_IST_OFFSET = timedelta(hours=5, minutes=30)
-
 
 class PivotPoints(Indicator):
     """
@@ -42,7 +35,9 @@ class PivotPoints(Indicator):
         result = await self.compute_full(params)
         return result[0] if result is not None else None
 
-    async def compute_full(self, params: Parameters) -> tuple[float, float, float, float, float, float, float] | None:
+    async def compute_full(
+        self, params: Parameters
+    ) -> tuple[float, float, float, float, float, float, float] | None:
         # Fetch the two most recent daily bars; use the second-to-last as "yesterday"
         rows = await self._store.fetch(self._symbol, "1day", 2)
         if len(rows) < 2:

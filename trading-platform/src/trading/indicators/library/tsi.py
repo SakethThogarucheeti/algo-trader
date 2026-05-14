@@ -55,8 +55,8 @@ class TSI(Indicator):
             return None
 
         closes = np.array([r["close"] for r in rows], dtype=float)
-        pc = np.diff(closes)           # 1-bar price change
-        apc = np.abs(pc)               # absolute price change
+        pc = np.diff(closes)  # 1-bar price change
+        apc = np.abs(pc)  # absolute price change
 
         # Double smooth
         smooth_pc = _ema(_ema(pc, params.fast), params.slow)

@@ -65,7 +65,9 @@ class VwapReversionStrategy(Strategy):
     def get_state(self) -> dict[str, object]:
         return {
             "vwap": round(self._last_vwap, 4) if self._last_vwap is not None else None,
-            f"atr_{self._atr_period}": round(self._last_atr, 4) if self._last_atr is not None else None,
+            f"atr_{self._atr_period}": round(self._last_atr, 4)
+            if self._last_atr is not None
+            else None,
             "last_close": round(self._last_close, 2) if self._last_close is not None else None,
             "vwap_band": self._vwap_band,
         }
@@ -105,22 +107,38 @@ class VwapReversionStrategy(Strategy):
         deviation = prev_close - prev_vwap
 
         if deviation <= -band and candle.close > prev_close:
-            logger.info("VwapReversion[%s]: BUY  dev=%.2f atr=%.2f stop=%.4f",
-                        symbol, deviation, atr, stop_distance)
+            logger.info(
+                "VwapReversion[%s]: BUY  dev=%.2f atr=%.2f stop=%.4f",
+                symbol,
+                deviation,
+                atr,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.BUY, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.BUY,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 
         if deviation >= band and candle.close < prev_close:
-            logger.info("VwapReversion[%s]: SELL dev=%.2f atr=%.2f stop=%.4f",
-                        symbol, deviation, atr, stop_distance)
+            logger.info(
+                "VwapReversion[%s]: SELL dev=%.2f atr=%.2f stop=%.4f",
+                symbol,
+                deviation,
+                atr,
+                stop_distance,
+            )
             return Signal(
-                symbol=symbol, instrument_type=instrument_type,
-                side=Side.SELL, strategy_id=self.id,
-                signal_type=SignalType.ENTRY, stop_distance=stop_distance,
+                symbol=symbol,
+                instrument_type=instrument_type,
+                side=Side.SELL,
+                strategy_id=self.id,
+                signal_type=SignalType.ENTRY,
+                stop_distance=stop_distance,
                 timestamp=candle.timestamp,
             )
 

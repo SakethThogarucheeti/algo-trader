@@ -43,10 +43,10 @@ class UpperShadowRatio(Indicator):
         if len(rows) < params.period:
             return None
 
-        opens  = np.array([r["open"]  for r in rows[-params.period:]], dtype=float)
-        highs  = np.array([r["high"]  for r in rows[-params.period:]], dtype=float)
-        lows   = np.array([r["low"]   for r in rows[-params.period:]], dtype=float)
-        closes = np.array([r["close"] for r in rows[-params.period:]], dtype=float)
+        opens = np.array([r["open"] for r in rows[-params.period :]], dtype=float)
+        highs = np.array([r["high"] for r in rows[-params.period :]], dtype=float)
+        lows = np.array([r["low"] for r in rows[-params.period :]], dtype=float)
+        closes = np.array([r["close"] for r in rows[-params.period :]], dtype=float)
 
         ranges = highs - lows
         upper_shadows = highs - np.maximum(opens, closes)

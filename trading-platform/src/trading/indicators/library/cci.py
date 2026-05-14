@@ -38,9 +38,7 @@ class CCI(Indicator):
         if len(rows) < params.period:
             return None
 
-        tp = np.array(
-            [(r["high"] + r["low"] + r["close"]) / 3.0 for r in rows], dtype=float
-        )
+        tp = np.array([(r["high"] + r["low"] + r["close"]) / 3.0 for r in rows], dtype=float)
         sma_tp = float(np.mean(tp))
         mad = float(np.mean(np.abs(tp - sma_tp)))
         if mad == 0.0:

@@ -44,7 +44,7 @@ class PricePercentile(Indicator):
         if len(rows) < params.period:
             return None
 
-        closes = np.array([r["close"] for r in rows[-params.period:]], dtype=float)
+        closes = np.array([r["close"] for r in rows[-params.period :]], dtype=float)
         current = closes[-1]
         pct = float(np.sum(closes[:-1] < current) / (params.period - 1) * 100.0)
         return pct

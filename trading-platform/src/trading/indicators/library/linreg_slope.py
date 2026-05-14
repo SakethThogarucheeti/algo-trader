@@ -43,7 +43,7 @@ class LinearRegressionSlope(Indicator):
         if len(rows) < params.period:
             return None
 
-        closes = np.array([r["close"] for r in rows[-params.period:]], dtype=float)
+        closes = np.array([r["close"] for r in rows[-params.period :]], dtype=float)
         x = np.arange(params.period, dtype=float)
         x -= x.mean()
         slope = float(np.dot(x, closes) / np.dot(x, x))

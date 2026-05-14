@@ -27,9 +27,7 @@ class StrategyFactory:
             return _STRATEGIES[strategy_id]
         except KeyError:
             available = ", ".join(sorted(_STRATEGIES))
-            raise ValueError(
-                f"Unknown strategy {strategy_id!r}. Available: {available}."
-            ) from None
+            raise ValueError(f"Unknown strategy {strategy_id!r}. Available: {available}.") from None
 
     @staticmethod
     def create(
