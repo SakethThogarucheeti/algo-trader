@@ -14,6 +14,7 @@ from trading.reports.fetch import (
     fetch_audit_logs,
     fetch_decisions,
     fetch_heartbeats,
+    fetch_nifty_benchmark,
     fetch_signals,
 )
 from trading.reports.render import hr, print_strategy_section, print_system_section
@@ -49,6 +50,7 @@ async def run_report(start: datetime, end: datetime, title: str) -> None:
         audit_logs = await fetch_audit_logs(session, start, end)
         heartbeats = await fetch_heartbeats(session)
         algo_configs = await fetch_algo_configs(session)
+        nifty_benchmark = await fetch_nifty_benchmark(session, start, end)
 
     await engine.dispose()
 
@@ -59,7 +61,7 @@ async def run_report(start: datetime, end: datetime, title: str) -> None:
     print(f"  Period:    {start.strftime('%Y-%m-%d %H:%M')} – {end.strftime('%Y-%m-%d %H:%M')} UTC")
     print(f"  Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
-    print_strategy_section(signals, decisions, algo_configs)
+    print_strategy_section(signals, decisions, algo_configs, nifty_benchmark=nifty_benchmark)
     print_system_section(decisions, audit_logs, heartbeats)
 
     print()

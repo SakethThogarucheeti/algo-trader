@@ -37,6 +37,8 @@ class DashboardServer(Component):
         self._server: object | None = None  # uvicorn.Server, set in _setup
 
     async def _setup(self) -> None:
+        import socket
+
         import uvicorn
 
         app = build_app(self._session_factory, self._clock)
@@ -47,6 +49,9 @@ class DashboardServer(Component):
             log_level="warning",  # keep uvicorn quiet; our logger handles app logs
             access_log=False,
         )
+        config.load()
+        # Allow immediate rebind after restart — avoids "port in use" on TIME_WAIT
+        config.socket_options = [(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)]
         self._server = uvicorn.Server(config)
         logger.info("DashboardServer: ready on http://%s:%d", self._host, self._port)
 

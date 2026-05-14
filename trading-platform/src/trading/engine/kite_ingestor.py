@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -9,6 +10,7 @@ from anyio import sleep_forever
 
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.paper_broker import AbstractPriceStore
+from trading.core.context import thread_id
 from trading.core.schemas import TickEvent
 from trading.engine.component import Component
 from trading.registry.tick import TickRegistry
@@ -111,6 +113,8 @@ class KiteIngestor(Component):
         self._loop.call_soon_threadsafe(self._tick_registry.on_disconnected)
 
     async def _handle_tick(self, raw: dict) -> None:
+        thread_id.set(os.urandom(4).hex())
+
         tick = await self._tick_registry.handle(raw)
         if tick is None:
             return

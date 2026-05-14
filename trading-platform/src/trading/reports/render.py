@@ -7,6 +7,10 @@ import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
+from trading.core.models import AuditLog, DecisionLog, Heartbeat, Signal
+from trading.core.schemas import OrderStatus
+from trading.reports.pnl import compute_pnl
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,16 +23,13 @@ def _safe_json(s: str | None) -> dict:
         logger.warning("reports: malformed JSON: %r", s[:100])
         return {}
 
-from trading.core.models import AuditLog, DecisionLog, Heartbeat, Signal
-from trading.core.schemas import OrderStatus
-from trading.reports.pnl import compute_pnl
-
 _W = 70
 
 
 # ---------------------------------------------------------------------------
 # Primitives
 # ---------------------------------------------------------------------------
+
 
 def hr(char: str = "─") -> None:
     print(char * _W)
@@ -61,10 +62,12 @@ def pnl_str(value: float) -> str:
 # Sections
 # ---------------------------------------------------------------------------
 
+
 def print_strategy_section(
     signals: list[Signal],
     decisions: list[DecisionLog],
     algo_configs: list[dict[str, object]],
+    nifty_benchmark: dict[str, float] | None = None,
 ) -> None:
     section("STRATEGY PERFORMANCE")
 
@@ -145,28 +148,68 @@ def print_strategy_section(
         print("    No filled orders in this period.")
 
     # --- P&L ---
-    subsection("Realized P&L (FIFO matched)")
+    subsection("Realized P&L (FIFO matched, after costs)")
 
     pnl_map = compute_pnl(signals)
     total_realized = 0.0
+    total_costs = 0.0
+    total_net = 0.0
 
     if pnl_map:
-        print(f"    {'Position':<36}{'Realized':>12}{'Open Qty':>10}{'Open Avg':>12}")
+        print(
+            f"    {'Position':<32}{'Gross':>10}{'Costs':>10}{'Net':>10}"
+            f"{'Open Qty':>9}{'Open Avg':>10}"
+        )
         hr()
         for label, data in sorted(pnl_map.items()):
             r = data["realized"]
+            c = data["total_costs"]
+            n = data["net_realized"]
             total_realized += r
+            total_costs += c
+            total_net += n
             open_qty = int(data["open_qty"])
             open_avg = data["open_avg"]
             print(
-                f"    {label:<36}{pnl_str(r):>12}"
-                f"{str(open_qty) if open_qty else '—':>10}"
-                f"{f'{open_avg:.2f}' if open_qty else '—':>12}"
+                f"    {label:<32}{pnl_str(r):>10}{f'-{c:,.2f}':>10}{pnl_str(n):>10}"
+                f"{str(open_qty) if open_qty else '—':>9}"
+                f"{f'{open_avg:.2f}' if open_qty else '—':>10}"
             )
         hr()
-        print(f"    {'TOTAL':<36}{pnl_str(total_realized):>12}")
+        print(
+            f"    {'TOTAL':<32}{pnl_str(total_realized):>10}"
+            f"{f'-{total_costs:,.2f}':>10}{pnl_str(total_net):>10}"
+        )
+        print()
+        print(f"    Gross P&L:         {pnl_str(total_realized):>12}")
+        print(f"    Trading costs:     -{total_costs:>11,.2f}  (STT + brokerage + GST + slippage)")
+        print(f"    Net P&L:           {pnl_str(total_net):>12}")
     else:
         print("    No matched trades in this period.")
+
+    # --- Nifty 50 benchmark ---
+    if nifty_benchmark is not None:
+        subsection("Benchmark: Nifty 50 Buy-and-Hold")
+        b_open = nifty_benchmark["open"]
+        b_close = nifty_benchmark["close"]
+        b_pct = nifty_benchmark["pct_return"]
+        row("Nifty 50 open", f"{b_open:,.2f}")
+        row("Nifty 50 close", f"{b_close:,.2f}")
+        row("Buy-and-hold return", f"{'+' if b_pct >= 0 else ''}{b_pct:.2f}%")
+        if pnl_map:
+            total_capital = sum(
+                float(cfg["equity"]) for cfg in algo_configs if cfg.get("enabled")
+            )
+            if total_capital:
+                algo_pct = total_net / total_capital * 100
+                sign = "+" if algo_pct >= 0 else ""
+                row("Algo net return (on capital)", f"{sign}{algo_pct:.2f}%")
+                diff = algo_pct - b_pct
+                row(
+                    "Alpha vs Nifty 50",
+                    f"{'+' if diff >= 0 else ''}{diff:.2f}%  "
+                    f"({'outperforming' if diff >= 0 else 'underperforming'})",
+                )
 
     # --- Algo configuration snapshot ---
     subsection("Algo Configuration")

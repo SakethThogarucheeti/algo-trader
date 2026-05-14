@@ -20,7 +20,7 @@ import asyncio
 import logging
 import subprocess
 import sys
-from datetime import time
+from datetime import date, time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -30,14 +30,26 @@ from anyio import sleep_forever
 from trading.di.container import build_container
 from trading.engine.runtime import AbstractRuntime
 from trading.engine.scheduler import Scheduler
+from trading.monitoring.dashboard.component import DashboardServer
 
 _LOG_DIR = Path("logs")
 _LOG_DIR.mkdir(exist_ok=True)
 
 _fmt = logging.Formatter(
-    "%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    "%(asctime)s %(levelname)-8s [%(thread_id)s] %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+
+class _ThreadIdFilter(logging.Filter):
+    """Inject the current thread_id context var into every LogRecord."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        from trading.core.context import thread_id
+
+        record.thread_id = thread_id.get()  # type: ignore[attr-defined]
+        return True
+
 
 # Stream handler — live output to terminal, force UTF-8 on Windows
 _stream_handler = logging.StreamHandler(
@@ -45,16 +57,20 @@ _stream_handler = logging.StreamHandler(
 )
 _stream_handler.setFormatter(_fmt)
 
-# Rotating file handler — 10 MB per file, keep 10 files (~100 MB max)
+# One log file per calendar day — named logs/trading.2026-05-14.log at startup.
 _file_handler = RotatingFileHandler(
-    _LOG_DIR / "trading.log",
-    maxBytes=10 * 1024 * 1024,
-    backupCount=10,
+    _LOG_DIR / f"trading.{date.today()}.log",
+    maxBytes=50 * 1024 * 1024,
+    backupCount=3,
     encoding="utf-8",
 )
 _file_handler.setFormatter(_fmt)
 
 logging.basicConfig(level=logging.INFO, handlers=[_stream_handler, _file_handler])
+
+# Attach the filter to the root logger so it runs for every record regardless
+# of which handler ultimately receives it.
+logging.getLogger().addFilter(_ThreadIdFilter())
 logger = logging.getLogger(__name__)
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -65,6 +81,7 @@ _MARKET_CLOSE = time(15, 30)
 def _check_port_free(port: int) -> None:
     """Exit with a clear message if *port* is already in use."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         if s.connect_ex(("127.0.0.1", port)) != 0:
             return  # port is free
@@ -111,6 +128,7 @@ def _is_market_hours() -> bool:
 
 async def _main() -> None:
     from trading.config.settings import get_settings
+
     settings = get_settings()
     if settings.dashboard_enabled:
         _check_port_free(settings.dashboard_port)
@@ -120,12 +138,21 @@ async def _main() -> None:
     async with build_container() as container:
         runtime: AbstractRuntime = await container.get(AbstractRuntime)
         scheduler: Scheduler = await container.get(Scheduler)
+        dashboard: DashboardServer | None = await container.get(DashboardServer | None)
 
         scheduler.start()
         logger.info("Scheduler started.")
 
-        runtime_task: asyncio.Task[None] | None = None
+        dashboard_task: asyncio.Task[None] | None = None
+        if dashboard is not None:
+            logger.info(
+                "Dashboard starting on http://%s:%d",
+                settings.dashboard_host,
+                settings.dashboard_port,
+            )
+            dashboard_task = asyncio.get_event_loop().create_task(dashboard.start())
 
+        runtime_task: asyncio.Task[None] | None = None
         if _is_market_hours():
             logger.info("Market is currently open — starting runtime immediately.")
             runtime_task = asyncio.get_event_loop().create_task(runtime.start())
@@ -140,6 +167,10 @@ async def _main() -> None:
             runtime.stop()
             if runtime_task is not None and not runtime_task.done():
                 await runtime_task
+            if dashboard is not None:
+                await dashboard.stop()
+            if dashboard_task is not None and not dashboard_task.done():
+                await dashboard_task
 
 
 if __name__ == "__main__":

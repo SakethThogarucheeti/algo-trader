@@ -60,9 +60,12 @@ if not API_KEY or not API_SECRET:
 
 _CALLBACK_HOST = "127.0.0.1"
 
+
 def _callback_port() -> int:
     from trading.config.settings import get_settings
+
     return get_settings().login_callback_port
+
 
 # Shared result — set by the HTTP handler, read by main thread
 _request_token: str | None = None
@@ -130,6 +133,7 @@ def _write_token_to_env(token: str, env_path: Path) -> None:
 
 def _exchange_and_save(client: object, request_token: str) -> None:
     from trading.broker.zerodha.kite_client import KiteClient
+
     assert isinstance(client, KiteClient)
     print("\nRequest token received. Exchanging for access token …")
     session = client.generate_session(request_token, API_SECRET)

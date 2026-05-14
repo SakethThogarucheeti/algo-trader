@@ -80,16 +80,18 @@ def build_app(
             )
             positions = result.scalars().all()
 
-        return JSONResponse(content=[
-            {
-                "symbol": p.symbol,
-                "instrument_type": p.instrument_type,
-                "net_qty": p.net_qty,
-                "avg_price": float(p.avg_price),
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-            }
-            for p in positions
-        ])
+        return JSONResponse(
+            content=[
+                {
+                    "symbol": p.symbol,
+                    "instrument_type": p.instrument_type,
+                    "net_qty": p.net_qty,
+                    "avg_price": float(p.avg_price),
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+                for p in positions
+            ]
+        )
 
     # ------------------------------------------------------------------
     # GET /api/health — heartbeat status (JSON)
@@ -110,11 +112,13 @@ def build_app(
             if last_seen.tzinfo is None:
                 last_seen = last_seen.replace(tzinfo=UTC)
             stale = (now - last_seen).total_seconds() > stale_threshold
-            rows.append({
-                "module": hb.module,
-                "last_seen": last_seen.isoformat(),
-                "stale": stale,
-            })
+            rows.append(
+                {
+                    "module": hb.module,
+                    "last_seen": last_seen.isoformat(),
+                    "stale": stale,
+                }
+            )
         return JSONResponse(content=rows)
 
     # ------------------------------------------------------------------
@@ -139,16 +143,18 @@ def build_app(
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
-        return JSONResponse(content=[
-            {
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "symbol": r.symbol,
-                "algo_name": r.algo_name or "—",
-                "step": r.step,
-                "context": r.context,
-            }
-            for r in rows
-        ])
+        return JSONResponse(
+            content=[
+                {
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "symbol": r.symbol,
+                    "algo_name": r.algo_name or "—",
+                    "step": r.step,
+                    "context": r.context,
+                }
+                for r in rows
+            ]
+        )
 
     # ------------------------------------------------------------------
     # GET /api/algos — algo config + live state (JSON)
@@ -156,10 +162,9 @@ def build_app(
 
     @app.get("/api/algos")
     async def get_algos() -> JSONResponse:
-        from trading.storage.repository import Repository
-        repo = Repository()
-        async with session_factory() as session:
-            algos = await repo.get_algo_configs_with_state(session)
+        from trading.storage.stores.config import ConfigStore
+
+        algos = await ConfigStore(session_factory).get_algo_configs_with_state()
         return JSONResponse(content=algos)
 
     # ------------------------------------------------------------------
@@ -206,6 +211,7 @@ def build_app(
     async def get_ticks(symbol: str = "INFY", limit: int = 500) -> JSONResponse:
         async with session_factory() as session:
             from trading.core.models import TickLog
+
             result = await session.execute(
                 select(TickLog)
                 .where(
@@ -217,10 +223,7 @@ def build_app(
             )
             ticks = list(reversed(result.scalars().all()))
 
-        points = [
-            {"ts": t.received_at.isoformat(), "price": float(t.last_price)}
-            for t in ticks
-        ]
+        points = [{"ts": t.received_at.isoformat(), "price": float(t.last_price)} for t in ticks]
         return JSONResponse(content=points)
 
     # ------------------------------------------------------------------
@@ -229,36 +232,59 @@ def build_app(
 
     @app.get("/api/pnl")
     async def get_pnl(session_id: str = "") -> JSONResponse:
+        from trading.reports.fetch import fetch_nifty_benchmark
+        from trading.reports.pnl import DEFAULT_COSTS
+
+        today = _today_start()
+
         async with session_factory() as session:
             result = await session.execute(
                 select(Order, Signal)
                 .join(Signal, Order.signal_id == Signal.id)
                 .where(
                     Order.status == "FILLED",
-                    Order.created_at >= _today_start(),
+                    Order.created_at >= today,
                 )
                 .order_by(Order.created_at)
             )
             rows = result.all()
+            nifty = await fetch_nifty_benchmark(session, today, clock.now())
 
-        cumulative = 0.0
+        cum_gross = 0.0
+        cum_net = 0.0
         points: list[dict[str, object]] = []
         for order, signal in rows:
-            cumulative += float(order.avg_price) * order.qty
+            sign = 1.0 if signal.side == "SELL" else -1.0
+            notional = float(order.avg_price) * order.qty
+            cost = DEFAULT_COSTS.cost_for_fill(signal.side, order.qty, float(order.avg_price))
+            cum_gross += sign * notional
+            cum_net += sign * notional - cost
             ts = order.created_at
             points.append(
                 {
                     "ts": ts.isoformat() if ts else "",
-                    "cumulative_pnl": round(cumulative, 2),
+                    "cumulative_gross": round(cum_gross, 2),
+                    "cumulative_net": round(cum_net, 2),
                     "side": signal.side,
                     "qty": order.qty,
                     "price": float(order.avg_price),
+                    "cost": round(cost, 2),
                     "symbol": signal.symbol,
                     "signal_type": signal.signal_type,
                 }
             )
 
-        return JSONResponse(content=points)
+        total_costs = round(cum_gross - cum_net, 2)
+        summary: dict[str, object] = {
+            "gross": round(cum_gross, 2),
+            "costs": total_costs,
+            "net": round(cum_net, 2),
+            "nifty_pct": round(nifty["pct_return"], 2) if nifty else None,
+            "nifty_open": round(nifty["open"], 2) if nifty else None,
+            "nifty_close": round(nifty["close"], 2) if nifty else None,
+        }
+
+        return JSONResponse(content={"points": points, "summary": summary})
 
     # ------------------------------------------------------------------
     # GET /api/charts?session_id=&limit= — indicator chart series (JSON)
@@ -266,8 +292,9 @@ def build_app(
 
     @app.get("/api/charts")
     async def get_charts(session_id: str = "", limit: int = 500) -> JSONResponse:
-        from trading.storage.repository import Repository
-        repo = Repository()
+        from trading.storage.stores.chart import ChartStore
+
+        chart_store = ChartStore(session_factory)
         sid: str | None = session_id if session_id else None
         since = _today_start()
 
@@ -278,17 +305,16 @@ def build_app(
 
         # For each algo, get chart names then fetch each chart's series
         combined: dict[str, dict[str, list[dict]]] = {}
-        async with session_factory() as session:
-            for algo_name in algo_names:
-                chart_names = await repo.get_chart_names(session, algo_name, since, sid)
-                for chart_name in chart_names:
-                    series = await repo.get_indicator_series(
-                        session, algo_name, chart_name, since, sid, limit
-                    )
-                    # Merge series from multiple algos into the same chart bucket
-                    if chart_name not in combined:
-                        combined[chart_name] = {}
-                    combined[chart_name].update(series)
+        for algo_name in algo_names:
+            chart_names = await chart_store.get_chart_names(algo_name, since, sid)
+            for chart_name in chart_names:
+                series = await chart_store.get_indicator_series(
+                    algo_name, chart_name, since, sid, limit
+                )
+                # Merge series from multiple algos into the same chart bucket
+                if chart_name not in combined:
+                    combined[chart_name] = {}
+                combined[chart_name].update(series)
 
         return JSONResponse(content=combined)
 

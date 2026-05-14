@@ -90,7 +90,8 @@ def _load_parquet(symbol: str, interval: str, path: Path) -> list[dict]:
     if not required.issubset(df.columns):
         logger.warning(
             "import-candles: %s missing columns %s — skipping",
-            path, required - set(df.columns),
+            path,
+            required - set(df.columns),
         )
         return []
 
@@ -104,29 +105,31 @@ def _load_parquet(symbol: str, interval: str, path: Path) -> list[dict]:
             ts = ts.replace(tzinfo=UTC)
         elif not hasattr(ts, "tzinfo"):
             continue  # skip non-datetime rows
-        rows.append({
-            "symbol": symbol,
-            "interval": interval,
-            "ts": ts,
-            "open": float(row["open"]),
-            "high": float(row["high"]),
-            "low": float(row["low"]),
-            "close": float(row["close"]),
-            "volume": int(row.get("volume") or 0),
-        })
+        rows.append(
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "ts": ts,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": int(row.get("volume") or 0),
+            }
+        )
     return rows
 
 
 async def _run(args: argparse.Namespace) -> None:
     from trading.config.settings import get_settings
     from trading.core.database import build_engine, build_session_factory, init_db
-    from trading.storage.repository import Repository
+    from trading.storage.stores.candle import CandleDataStore
 
     settings = get_settings()
     engine = build_engine(str(settings.postgres_url))
     await init_db(engine)
     sf = build_session_factory(engine)
-    repo = Repository()
+    candle_store = CandleDataStore(sf)
 
     total_inserted = 0
     for symbol, interval, path in _discover(args.data_dir, args.symbols, args.intervals):
@@ -137,14 +140,15 @@ async def _run(args: argparse.Namespace) -> None:
         inserted = 0
         for i in range(0, len(rows), args.batch_size):
             batch = rows[i : i + args.batch_size]
-            async with sf() as session:
-                async with session.begin():
-                    await repo.save_candles(session, batch)
+            await candle_store.save_candles(batch)
             inserted += len(batch)
 
         logger.info(
             "import-candles: %s/%s — %d rows inserted from %s",
-            symbol, interval, inserted, path.name,
+            symbol,
+            interval,
+            inserted,
+            path.name,
         )
         total_inserted += inserted
 
