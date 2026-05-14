@@ -31,6 +31,8 @@ import polars as pl
 from trading.broker.base.broker import Broker
 from trading.core.schemas import OrderType, Side
 
+_DEFAULT_SLIPPAGE_PCT = 0.05 / 100  # 0.05% per leg — overridden by settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,14 +56,24 @@ class AbstractPriceStore(ABC):
 class PriceStore(AbstractPriceStore):
     """In-memory implementation: symbol → last traded price."""
 
-    def __init__(self) -> None:
+    def __init__(self, slippage_pct: float = _DEFAULT_SLIPPAGE_PCT) -> None:
         self._prices: dict[str, float] = {}
+        self._slippage_pct = slippage_pct
 
     def update(self, symbol: str, price: float) -> None:
         self._prices[symbol] = price
 
     def get(self, symbol: str) -> float | None:
         return self._prices.get(symbol)
+
+    def fill_price(self, symbol: str, side: Side) -> float | None:
+        """Return last price adjusted for slippage in the direction of the fill."""
+        price = self.get(symbol)
+        if price is None:
+            return None
+        slip = price * self._slippage_pct
+        # BUY fills at a slightly higher price, SELL fills at a slightly lower price
+        return price + slip if side == Side.BUY else price - slip
 
 
 class PaperBroker(Broker):

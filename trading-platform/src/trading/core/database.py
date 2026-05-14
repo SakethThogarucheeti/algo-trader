@@ -15,7 +15,12 @@ from trading.core.models import Base
 
 def build_engine(url: str) -> AsyncEngine:
     """Create an async engine from a connection URL."""
-    return create_async_engine(url, echo=False)
+    return create_async_engine(
+        url,
+        echo=False,
+        pool_pre_ping=True,   # detect stale connections before reuse
+        pool_recycle=1800,    # recycle connections every 30 min
+    )
 
 
 def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

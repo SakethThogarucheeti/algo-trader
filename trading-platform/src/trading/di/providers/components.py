@@ -14,19 +14,25 @@ from trading.engine.algo_runner import AlgoRunner
 from trading.engine.candle_aggregator import CandleAggregator
 from trading.engine.component import Component
 from trading.engine.heartbeat import HeartbeatMonitor
+from trading.monitoring.dashboard.component import DashboardServer
 from trading.engine.kite_ingestor import KiteIngestor, OnTickCallback
 from trading.engine.runtime import AbstractRuntime, Runtime
 from trading.engine.scheduler import Scheduler
 from trading.execution.executor import OrderExecutor
 from trading.indicators.context import IndicatorContext
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
 from trading.registry.tick import TickConfig, TickRegistry
 from trading.risk.base import RiskController
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.candle import CandleDataStore
+from trading.storage.stores.chart import ChartStore
+from trading.storage.stores.config import ConfigStore
+from trading.storage.stores.heartbeat import HeartbeatStore
+from trading.storage.stores.trading import TradingStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,7 @@ class ComponentProvider(Provider):
     async def tick_registry(
         self,
         stream: BrokerStream,
-        repo: AbstractRepository,
+        audit: AuditStore,
         sf: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> TickRegistry:
@@ -54,8 +60,7 @@ class ComponentProvider(Provider):
         return TickRegistry(
             config=config,
             stream=stream,
-            session_factory=sf,
-            repo=repo,
+            audit=audit,
             circuit_timeout_secs=settings.circuit_timeout_secs,
         )
 
@@ -63,7 +68,8 @@ class ComponentProvider(Provider):
     async def candle_registry(
         self,
         broker: Broker,
-        repo: AbstractRepository,
+        candle: CandleDataStore,
+        audit: AuditStore,
         sf: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> CandleRegistry:
@@ -79,12 +85,12 @@ class ComponentProvider(Provider):
             intervals=settings.candle_intervals,
             warmup_count=settings.warmup_candles,
         )
-        return CandleRegistry(config=config, broker=broker, session_factory=sf, repo=repo)
+        return CandleRegistry(config=config, broker=broker, candle=candle, audit=audit)
 
     @provide
     def heartbeat_monitor(
         self,
-        repo: AbstractRepository,
+        heartbeat: HeartbeatStore,
         sf: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> HeartbeatMonitor:
@@ -99,7 +105,8 @@ class ComponentProvider(Provider):
             )
 
         return HeartbeatMonitor(
-            repo, sf,
+            heartbeat,
+            sf,
             component_names=["heartbeat_monitor"],
             beat_interval_secs=settings.heartbeat_interval_secs,
             timeout_secs=settings.heartbeat_timeout_secs,
@@ -114,7 +121,10 @@ class ComponentProvider(Provider):
         heartbeat_monitor: HeartbeatMonitor,
         stream: BrokerStream,
         broker: Broker,
-        repo: AbstractRepository,
+        trading: TradingStore,
+        audit: AuditStore,
+        chart: ChartStore,
+        config_store: ConfigStore,
         price_store: AbstractPriceStore,
         settings: Settings,
         sf: async_sessionmaker[AsyncSession],
@@ -190,8 +200,9 @@ class ComponentProvider(Provider):
                     warmup_candles=settings.warmup_candles,
                     algo_name=algo.name,
                 ),
-                session_factory=sf,
-                repo=repo,
+                chart=chart,
+                config_store=config_store,
+                audit=audit,
                 algos=algo_instances,
                 store=polars_store,
             )
@@ -208,31 +219,40 @@ class ComponentProvider(Provider):
                     intraday_cutoff_minute=settings.intraday_cutoff_minute,
                 ),
                 circuit=tick_registry.circuit,
-                session_factory=sf,
-                repo=repo,
+                trading=trading,
+                audit=audit,
             )
 
             exec_reg = ExecRegistry(
                 config=ExecConfig(exec_id=algo.execution_engine_id),
                 broker=broker,
                 session_factory=sf,
-                repo=repo,
+                trading=trading,
                 price_store=paper_price_store,
             )
 
             # Seed algo config into DB on first run
             strategy = make_strategy(algo.strategy_id)
-            async with sf() as session:
-                async with session.begin():
-                    await repo.seed_algo_config(
-                        session,
-                        name=algo.name,
-                        strategy_id=algo.strategy_id,
-                        warmup_candles=settings.warmup_candles,
-                        candle_intervals=intervals,
-                        equity=algo.equity,
-                        params=strategy.get_params(),
-                    )
+            await config_store.seed_algo_config(
+                name=algo.name,
+                strategy_id=algo.strategy_id,
+                warmup_candles=settings.warmup_candles,
+                candle_intervals=intervals,
+                equity=algo.equity,
+                params=strategy.get_params(),
+            )
+            # Reset session state so bars_seen reflects only this session,
+            # not stale counts from previous days.
+            await config_store.upsert_algo_state(
+                algo.name,
+                {
+                    "bars_seen": 0,
+                    "warmup_candles": settings.warmup_candles,
+                    "warmup_complete": False,
+                    "bars_remaining": settings.warmup_candles,
+                    "last_signal_at": None,
+                },
+            )
 
             # Wire warmup replay: CandleAggregator feeds historical candles into algo_reg
             candle_aggregator.add_algo_registry(algo_reg)
@@ -251,6 +271,7 @@ class ComponentProvider(Provider):
                         if order is None:
                             continue
                         await er.handle(order)
+
                 return _on_tick
 
             ingestor.add_on_tick(_make_on_tick(algo_reg, risk_reg, exec_reg))
@@ -261,28 +282,40 @@ class ComponentProvider(Provider):
 
             logger.info(
                 "ComponentProvider: algo=%r strategy=%r risk=%r exec=%r instruments=%d equity=%.0f",
-                algo.name, algo.strategy_id, algo.risk_controller_id,
-                algo.execution_engine_id, len(algo.instruments), algo.equity,
+                algo.name,
+                algo.strategy_id,
+                algo.risk_controller_id,
+                algo.execution_engine_id,
+                len(algo.instruments),
+                algo.equity,
             )
 
-        dashboard_components: list[Component] = []
-        if settings.dashboard_enabled:
-            from trading.monitoring.dashboard.component import DashboardServer
-            dashboard_components.append(DashboardServer(
-                session_factory=sf,
-                host=settings.dashboard_host,
-                port=settings.dashboard_port,
-            ))
+        return Runtime(
+            [
+                ingestor,
+                candle_aggregator,
+                *algo_runners,
+                *risk_controllers,
+                *order_executors,
+                heartbeat_monitor,
+            ]
+        )
 
-        return Runtime([
-            ingestor,
-            candle_aggregator,
-            *algo_runners,
-            *risk_controllers,
-            *order_executors,
-            heartbeat_monitor,
-            *dashboard_components,
-        ])
+    @provide
+    def dashboard(
+        self,
+        sf: async_sessionmaker[AsyncSession],
+        settings: Settings,
+    ) -> DashboardServer | None:
+        if not settings.dashboard_enabled:
+            return None
+        from trading.monitoring.dashboard.component import DashboardServer
+
+        return DashboardServer(
+            session_factory=sf,
+            host=settings.dashboard_host,
+            port=settings.dashboard_port,
+        )
 
     @provide
     def scheduler(self, settings: Settings, runtime: AbstractRuntime) -> Scheduler:

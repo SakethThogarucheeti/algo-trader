@@ -39,12 +39,13 @@ logger = logging.getLogger(__name__)
 #
 # ---------------------------------------------------------------------------
 
+
 def build_pipeline(
     *,
-    stream,        # BrokerStream
-    broker,        # Broker
-    sf,            # async_sessionmaker[AsyncSession]
-    repo,          # AbstractRepository
+    stream,  # BrokerStream
+    broker,  # Broker
+    sf,  # async_sessionmaker[AsyncSession]
+    repo,  # AbstractRepository
     price_store=None,  # AbstractPriceStore | None — set for paper trading
 ):
     """
@@ -59,7 +60,7 @@ def build_pipeline(
     # Stage 1 — Tick ingestion
     # ------------------------------------------------------------------
     tick_config = TickConfig(
-        instruments=[],   # populated from DB at startup via DI; override here for standalone
+        instruments=[],  # populated from DB at startup via DI; override here for standalone
         exec_id="paper",  # "paper" | "direct"
     )
     tick_reg = TickRegistry(
@@ -73,7 +74,7 @@ def build_pipeline(
     # Stage 2 — Candle aggregation
     # ------------------------------------------------------------------
     candle_config = CandleConfig(
-        instruments=[],   # same list as tick_config.instruments
+        instruments=[],  # same list as tick_config.instruments
         intervals=["1min", "5min"],
         warmup_count=200,
     )
@@ -92,16 +93,16 @@ def build_pipeline(
     # ------------------------------------------------------------------
     algo_config = AlgoConfig(
         instrument_strategy_map={
-            "INFY":  "ema_crossover",
-            "TCS":   "ema_crossover",
+            "INFY": "ema_crossover",
+            "TCS": "ema_crossover",
         },
         instrument_feature_map={
-            "INFY":  "technical",
-            "TCS":   "technical",
+            "INFY": "technical",
+            "TCS": "technical",
         },
         instrument_types={
-            "INFY":  "EQUITY",
-            "TCS":   "EQUITY",
+            "INFY": "EQUITY",
+            "TCS": "EQUITY",
         },
         equity=10_000.0,
         warmup_candles=200,
@@ -129,7 +130,7 @@ def build_pipeline(
     )
     risk_reg = RiskRegistry(
         config=risk_config,
-        circuit=tick_reg.circuit,   # same CircuitBreaker instance as tick_reg
+        circuit=tick_reg.circuit,  # same CircuitBreaker instance as tick_reg
         session_factory=sf,
         repo=repo,
     )

@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # Paper trading — simulates orders without hitting Zerodha            #
     # ------------------------------------------------------------------ #
     paper_trading: bool = False
+    paper_slippage_pct: float = Field(default=0.05, ge=0)  # % of notional per fill leg
 
     # ------------------------------------------------------------------ #
     # Algo configuration — one entry per trading algo                    #
@@ -95,6 +96,11 @@ class Settings(BaseSettings):
     dashboard_enabled: bool = True
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = 8081
+
+    # ------------------------------------------------------------------ #
+    # Timezone                                                            #
+    # ------------------------------------------------------------------ #
+    timezone: str = "Asia/Kolkata"
 
     # ------------------------------------------------------------------ #
     # Login callback server                                               #

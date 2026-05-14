@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta, timezone
-
-_IST = timezone(timedelta(hours=5, minutes=30))
+from datetime import datetime, timedelta, timezone
 
 import polars as pl
 
 from trading.broker.base.broker import Broker
 from trading.broker.zerodha.kite_client import KiteClient
 from trading.core.schemas import OrderType, Side
+
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 _ORDER_TIMEOUT_SECS = 10.0  # max time to wait for Zerodha REST API to respond
 

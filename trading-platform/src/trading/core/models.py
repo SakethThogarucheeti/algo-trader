@@ -176,9 +176,7 @@ class AlgoState(Base):
 
     __tablename__ = "algo_state"
 
-    name: Mapped[str] = mapped_column(
-        String, ForeignKey("algo_configs.name"), primary_key=True
-    )
+    name: Mapped[str] = mapped_column(String, ForeignKey("algo_configs.name"), primary_key=True)
     state: Mapped[str] = mapped_column(String, default="{}")  # JSON-encoded dict
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
