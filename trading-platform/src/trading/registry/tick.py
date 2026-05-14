@@ -5,13 +5,12 @@ import logging
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.broker.base.broker_stream import BrokerStream
 from trading.core.messaging import AbstractRegistry
 from trading.core.models import Instrument
 from trading.core.schemas import InstrumentType, TickEvent
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.audit import AbstractAuditStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +62,12 @@ class TickRegistry(AbstractRegistry):
         self,
         config: TickConfig,
         stream: BrokerStream,
-        session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        audit: AbstractAuditStore,
         circuit_timeout_secs: float = _CIRCUIT_TIMEOUT_SECS,
     ) -> None:
         self._config = config
         self._stream = stream
-        self._session_factory = session_factory
-        self._repo = repo
+        self._audit = audit
         self._circuit_timeout_secs = circuit_timeout_secs
 
         self.circuit = CircuitBreaker()
@@ -78,8 +75,7 @@ class TickRegistry(AbstractRegistry):
         self._loop: asyncio.AbstractEventLoop | None = None
 
         self._token_type: dict[int, InstrumentType] = {
-            inst.token: InstrumentType(inst.instrument_type)
-            for inst in config.instruments
+            inst.token: InstrumentType(inst.instrument_type) for inst in config.instruments
         }
         self._token_symbol: dict[int, str] = {
             inst.token: inst.symbol for inst in config.instruments
@@ -120,9 +116,7 @@ class TickRegistry(AbstractRegistry):
             return None
 
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    tick_log_id = await self._repo.log_tick(session, raw_event, symbol)
+            tick_log_id = await self._audit.log_tick(raw_event, symbol)
         except Exception as exc:
             logger.warning("TickRegistry: DB persist failed for token %s — %s", token, exc)
             tick_log_id = -1

@@ -5,20 +5,25 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.broker.base.broker import Broker
 from trading.core.messaging import AbstractRegistry
 from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
 from trading.core.tasks import fire
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.audit import AbstractAuditStore
+from trading.storage.stores.candle import AbstractCandleDataStore
 
 logger = logging.getLogger(__name__)
 
 _INTERVAL_MINUTES: dict[str, int] = {
-    "1min": 1, "3min": 3, "5min": 5, "10min": 10,
-    "15min": 15, "30min": 30, "60min": 60,
+    "1min": 1,
+    "3min": 3,
+    "5min": 5,
+    "10min": 10,
+    "15min": 15,
+    "30min": 30,
+    "60min": 60,
 }
 
 # NSE trades ~375 min/day (9:15–15:30); 5 trading days per 7 calendar days.
@@ -104,13 +109,13 @@ class CandleRegistry(AbstractRegistry):
         self,
         config: CandleConfig,
         broker: Broker,
-        session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        candle: AbstractCandleDataStore,
+        audit: AbstractAuditStore,
     ) -> None:
         self._config = config
         self._broker = broker
-        self._session_factory = session_factory
-        self._repo = repo
+        self._candle = candle
+        self._audit = audit
 
         self._symbols: list[_SymbolConfig] = [
             _SymbolConfig(
@@ -120,9 +125,7 @@ class CandleRegistry(AbstractRegistry):
             )
             for inst in config.instruments
         ]
-        self._token_sc: dict[int, _SymbolConfig] = {
-            sc.instrument_token: sc for sc in self._symbols
-        }
+        self._token_sc: dict[int, _SymbolConfig] = {sc.instrument_token: sc for sc in self._symbols}
         self._bars: dict[tuple[str, str], PartialBar] = {}
 
     # ------------------------------------------------------------------
@@ -158,42 +161,48 @@ class CandleRegistry(AbstractRegistry):
                 for row in df.tail(self._config.warmup_count).iter_rows(named=True):
                     try:
                         ts = _ensure_utc(row["date"])
-                        events.append(CandleEvent(
-                            symbol=sc.symbol,
-                            instrument_type=sc.instrument_type,
-                            interval=interval,
-                            open=float(row["open"]),
-                            high=float(row["high"]),
-                            low=float(row["low"]),
-                            close=float(row["close"]),
-                            volume=int(row.get("volume", 0)),
-                            timestamp=ts,
-                            tick_log_id=0,
-                        ))
-                        warmup_rows.append({
-                            "symbol": sc.symbol,
-                            "interval": interval,
-                            "ts": ts,
-                            "open": float(row["open"]),
-                            "high": float(row["high"]),
-                            "low": float(row["low"]),
-                            "close": float(row["close"]),
-                            "volume": int(row.get("volume", 0)),
-                        })
+                        events.append(
+                            CandleEvent(
+                                symbol=sc.symbol,
+                                instrument_type=sc.instrument_type,
+                                interval=interval,
+                                open=float(row["open"]),
+                                high=float(row["high"]),
+                                low=float(row["low"]),
+                                close=float(row["close"]),
+                                volume=int(row.get("volume", 0)),
+                                timestamp=ts,
+                                tick_log_id=0,
+                            )
+                        )
+                        warmup_rows.append(
+                            {
+                                "symbol": sc.symbol,
+                                "interval": interval,
+                                "ts": ts,
+                                "open": float(row["open"]),
+                                "high": float(row["high"]),
+                                "low": float(row["low"]),
+                                "close": float(row["close"]),
+                                "volume": int(row.get("volume", 0)),
+                            }
+                        )
                     except Exception as exc:
                         logger.warning(
                             "CandleRegistry: invalid warmup row %s %s — %s",
-                            sc.symbol, interval, exc,
+                            sc.symbol,
+                            interval,
+                            exc,
                         )
                 if warmup_rows:
                     try:
-                        async with self._session_factory() as session:
-                            async with session.begin():
-                                await self._repo.save_candles(session, warmup_rows)
+                        await self._candle.save_candles(warmup_rows)
                     except Exception as exc:
                         logger.warning(
                             "CandleRegistry: warmup candle persist failed for %s %s — %s",
-                            sc.symbol, interval, exc,
+                            sc.symbol,
+                            interval,
+                            exc,
                         )
         logger.info("CandleRegistry: warmup produced %d candles", len(events))
         return events
@@ -262,9 +271,9 @@ class CandleRegistry(AbstractRegistry):
 
     async def _log_candle(self, event: CandleEvent) -> None:
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.save_candles(session, [{
+            await self._candle.save_candles(
+                [
+                    {
                         "symbol": event.symbol,
                         "interval": event.interval,
                         "ts": event.timestamp,
@@ -273,23 +282,27 @@ class CandleRegistry(AbstractRegistry):
                         "low": event.low,
                         "close": event.close,
                         "volume": event.volume,
-                    }])
-                    if event.tick_log_id != 0:
-                        await self._repo.log_decision(
-                            session,
-                            step="CANDLE_EMITTED",
-                            symbol=event.symbol,
-                            tick_log_id=event.tick_log_id,
-                            context={
-                                "interval": event.interval,
-                                "open": event.open, "high": event.high,
-                                "low": event.low, "close": event.close,
-                                "volume": event.volume,
-                                "candle_ts": event.timestamp.isoformat(),
-                            },
-                        )
+                    }
+                ]
+            )
+            if event.tick_log_id != 0:
+                await self._audit.log_decision(
+                    step="CANDLE_EMITTED",
+                    symbol=event.symbol,
+                    tick_log_id=event.tick_log_id,
+                    context={
+                        "interval": event.interval,
+                        "open": event.open,
+                        "high": event.high,
+                        "low": event.low,
+                        "close": event.close,
+                        "volume": event.volume,
+                        "candle_ts": event.timestamp.isoformat(),
+                    },
+                )
         except Exception:
-            logger.warning(
+            logger.exception(
                 "CandleRegistry: candle persist/log failed for %s %s — audit trail gap",
-                event.symbol, event.interval,
+                event.symbol,
+                event.interval,
             )

@@ -19,8 +19,7 @@ from trading.core.schemas import (
     ValidatedOrderEvent,
 )
 from trading.execution.idempotency import is_duplicate
-from trading.storage.base import AbstractRepository
-from trading.storage.repository import NotFoundError
+from trading.storage.stores.trading import AbstractTradingStore, NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +45,13 @@ class ExecRegistry(AbstractRegistry):
         config: ExecConfig,
         broker: Broker,
         session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        trading: AbstractTradingStore,
         price_store: AbstractPriceStore | None = None,
     ) -> None:
         self._config = config
         self._broker = broker
         self._session_factory = session_factory
-        self._repo = repo
+        self._trading = trading
         self._price_store = price_store if config.exec_id == "paper" else None
 
     # ------------------------------------------------------------------
@@ -60,23 +59,24 @@ class ExecRegistry(AbstractRegistry):
     # ------------------------------------------------------------------
 
     async def handle(self, event: ValidatedOrderEvent) -> None:
+        order_id = uuid4()
+        order = Order(
+            id=order_id,
+            kite_order_id="",
+            signal_id=event.signal_id,
+            status=OrderStatus.PENDING.value,
+            qty=event.quantity,
+            avg_price=Decimal("0"),
+            created_at=datetime.now(UTC),
+        )
+
+        # Idempotency check + order insert must be atomic (prevent TOCTOU)
         async with self._session_factory() as session:
             async with session.begin():
                 if await is_duplicate(event.signal_id, session):
                     logger.info("ExecRegistry: duplicate signal_id %s — dropping", event.signal_id)
                     return
-
-                order_id = uuid4()
-                order = Order(
-                    id=order_id,
-                    kite_order_id="",
-                    signal_id=event.signal_id,
-                    status=OrderStatus.PENDING.value,
-                    qty=event.quantity,
-                    avg_price=Decimal("0"),
-                    created_at=datetime.now(UTC),
-                )
-                await self._repo.save_order(session, order)
+                session.add(order)
 
         # Broker call outside transaction
         try:
@@ -93,6 +93,7 @@ class ExecRegistry(AbstractRegistry):
             kite_order_id = f"FAILED_{order_id}"
             final_status = OrderStatus.REJECTED
 
+        # Write kite_order_id + final status back to the order row
         async with self._session_factory() as session:
             async with session.begin():
                 row = await session.get(Order, order_id)
@@ -104,7 +105,12 @@ class ExecRegistry(AbstractRegistry):
 
         # Paper trading: simulate immediate fill
         if self._price_store is not None and final_status == OrderStatus.PLACED:
-            fill_price: float | None = self._price_store.get(event.symbol)  # type: ignore[attr-defined]
+            _ps = self._price_store
+            fill_price: float | None = (
+                _ps.fill_price(event.symbol, event.side)  # type: ignore[attr-defined]
+                if hasattr(_ps, "fill_price")
+                else _ps.get(event.symbol)  # type: ignore[attr-defined]
+            )
             if fill_price is None:
                 logger.warning("ExecRegistry: no price known for %s — fill skipped", event.symbol)
             else:
@@ -132,18 +138,12 @@ class ExecRegistry(AbstractRegistry):
             filled_qty=filled_qty,
             timestamp=datetime.now(UTC),
         )
-        async with self._session_factory() as session:
-            async with session.begin():
-                try:
-                    await self._repo.update_order_status(
-                        session, kite_order_id, OrderStatus.FILLED, avg_price
-                    )
-                except NotFoundError:
-                    logger.warning(
-                        "ExecRegistry: fill for unknown order %s — skipping", kite_order_id
-                    )
-                    return
-                await self._repo.update_position(
-                    session, fill, Side(side), symbol, instrument_type
-                )
+        try:
+            await self._trading.update_order_status(kite_order_id, OrderStatus.FILLED, avg_price)
+        except NotFoundError:
+            logger.warning(
+                "ExecRegistry: fill for unknown order %s — skipping", kite_order_id
+            )
+            return
+        await self._trading.update_position(fill, Side(side), symbol, instrument_type)
         logger.info("ExecRegistry: fill %s avg=%.2f qty=%d", kite_order_id, avg_price, filled_qty)

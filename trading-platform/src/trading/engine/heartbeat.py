@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 
 from anyio import create_task_group, sleep
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.core.models import Heartbeat
 from trading.engine.component import Component
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.heartbeat import AbstractHeartbeatStore
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +30,15 @@ class HeartbeatMonitor(Component):
 
     def __init__(
         self,
-        repo: AbstractRepository,
-        session_factory,  # async_sessionmaker[AsyncSession]
+        heartbeat: AbstractHeartbeatStore,
+        session_factory: async_sessionmaker[AsyncSession],
         component_names: list[str],
         beat_interval_secs: int = 5,
         timeout_secs: int = 15,
         alerter=None,  # Callable[[str], Awaitable[None]] | None
     ) -> None:
         super().__init__(name="heartbeat_monitor")
-        self._repo = repo
+        self._heartbeat = heartbeat
         self._session_factory = session_factory
         self._component_names = component_names
         self._beat_interval = beat_interval_secs
@@ -48,10 +51,6 @@ class HeartbeatMonitor(Component):
 
     async def _setup(self) -> None:
         """Register monitored component names, clearing any stale rows from prior runs."""
-        from sqlalchemy import delete
-
-        from trading.core.models import Heartbeat
-
         async with self._session_factory() as session:
             async with session.begin():
                 # Delete heartbeat rows not in the current monitored set so old
@@ -59,8 +58,8 @@ class HeartbeatMonitor(Component):
                 await session.execute(
                     delete(Heartbeat).where(Heartbeat.module.not_in(self._component_names))
                 )
-                for name in self._component_names:
-                    await self._repo.update_heartbeat(session, name)
+        for name in self._component_names:
+            await self._heartbeat.update_heartbeat(name)
         logger.info("HeartbeatMonitor: registered %d components", len(self._component_names))
 
     async def _run(self) -> None:
@@ -76,9 +75,7 @@ class HeartbeatMonitor(Component):
         """Upsert own heartbeat every beat_interval_secs."""
         while True:
             try:
-                async with self._session_factory() as session:
-                    async with session.begin():
-                        await self._repo.update_heartbeat(session, self.name)
+                await self._heartbeat.update_heartbeat(self.name)
             except Exception:
                 logger.exception("HeartbeatMonitor: beat failed")
             await sleep(self._beat_interval)
@@ -92,11 +89,9 @@ class HeartbeatMonitor(Component):
 
     async def _check_stale(self) -> None:
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    stale = await self._repo.get_stale_modules(
-                        session, self._timeout, modules=self._component_names
-                    )
+            stale = await self._heartbeat.get_stale_modules(
+                self._timeout, modules=self._component_names
+            )
             for module in stale:
                 logger.warning("HeartbeatMonitor: %s is stale", module)
                 if self._alerter is not None:

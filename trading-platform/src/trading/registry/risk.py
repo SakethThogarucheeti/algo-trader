@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.clock import Clock, SystemClock
 from trading.core.messaging import AbstractRegistry
@@ -17,7 +16,8 @@ from trading.core.schemas import (
 from trading.core.tasks import fire
 from trading.registry.tick import CircuitBreaker
 from trading.risk.sizer import calculate_quantity
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.audit import AbstractAuditStore
+from trading.storage.stores.trading import AbstractTradingStore
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,14 @@ class RiskRegistry(AbstractRegistry):
         self,
         config: RiskConfig,
         circuit: CircuitBreaker,
-        session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        trading: AbstractTradingStore,
+        audit: AbstractAuditStore,
         clock: Clock | None = None,
     ) -> None:
         self._config = config
         self._circuit = circuit
-        self._session_factory = session_factory
-        self._repo = repo
+        self._trading = trading
+        self._audit = audit
         self._clock: Clock = clock or SystemClock()
 
     # ------------------------------------------------------------------
@@ -88,51 +88,47 @@ class RiskRegistry(AbstractRegistry):
             await self._reject(event, _CIRCUIT_OPEN)
             return None
 
-        async with self._session_factory() as session:
-            async with session.begin():
-                # 3. Daily loss limit (skipped in paper mode)
-                if not self._config.paper_trading:
-                    pnl = await self._repo.get_daily_realized_pnl(session, today)
-                    limit = self._config.equity * self._config.max_daily_loss_pct / 100.0
-                    if abs(pnl) > limit:
-                        await self._reject(event, _DAILY_LOSS_LIMIT)
-                        return None
+        # 3. Daily loss limit (skipped in paper mode)
+        if not self._config.paper_trading:
+            pnl = await self._trading.get_daily_realized_pnl(today)
+            limit = self._config.equity * self._config.max_daily_loss_pct / 100.0
+            if abs(pnl) > limit:
+                await self._reject(event, _DAILY_LOSS_LIMIT)
+                return None
 
-                # 4. Duplicate position check
-                if event.signal_type == SignalType.ENTRY:
-                    pos = await self._repo.get_position(
-                        session, event.symbol, event.instrument_type.value
-                    )
-                    if pos is not None and pos.net_qty != 0:
-                        if (pos.net_qty > 0 and event.side == Side.BUY) or (
-                            pos.net_qty < 0 and event.side == Side.SELL
-                        ):
-                            await self._reject(event, _ALREADY_IN_POSITION)
-                            return None
-
-                # 5. Size the order
-                qty = calculate_quantity(
-                    stop_distance=event.stop_distance,
-                    equity=self._config.equity,
-                    risk_pct=self._config.risk_per_trade_pct,
-                    lot_size=None,
-                )
-                if qty == 0:
-                    await self._reject(event, _ZERO_QUANTITY)
+        # 4. Duplicate position check
+        if event.signal_type == SignalType.ENTRY:
+            pos = await self._trading.get_position(event.symbol, event.instrument_type.value)
+            if pos is not None and pos.net_qty != 0:
+                if (pos.net_qty > 0 and event.side == Side.BUY) or (
+                    pos.net_qty < 0 and event.side == Side.SELL
+                ):
+                    await self._reject(event, _ALREADY_IN_POSITION)
                     return None
 
-                await self._repo.log_audit(
-                    session,
-                    "risk_registry",
-                    "INFO",
-                    f"signal {event.signal_id} accepted qty={qty}",
-                )
+        # 5. Size the order
+        qty = calculate_quantity(
+            stop_distance=event.stop_distance,
+            equity=self._config.equity,
+            risk_pct=self._config.risk_per_trade_pct,
+            lot_size=None,
+        )
+        if qty == 0:
+            await self._reject(event, _ZERO_QUANTITY)
+            return None
+
+        try:
+            await self._audit.log_audit(
+                "risk_registry",
+                "INFO",
+                f"signal {event.signal_id} accepted qty={qty}",
+            )
+        except Exception:
+            pass
 
         # Persist the Signal row before returning (FK needed by OrderExecutor)
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.save_signal(session, event)
+            await self._trading.save_signal(event)
         except Exception:
             logger.warning(
                 "RiskRegistry: failed to persist signal %s"
@@ -143,7 +139,10 @@ class RiskRegistry(AbstractRegistry):
         fire(self._log_decision("SIGNAL_ACCEPTED", event, {"qty": qty, "order_type": "MARKET"}))
         logger.info(
             "RiskRegistry: ACCEPTED signal=%s symbol=%s side=%s qty=%d",
-            event.signal_id, event.symbol, event.side.value, qty,
+            event.signal_id,
+            event.symbol,
+            event.side.value,
+            qty,
         )
         return ValidatedOrderEvent(
             signal_id=event.signal_id,
@@ -164,12 +163,11 @@ class RiskRegistry(AbstractRegistry):
         logger.info("RiskRegistry: REJECTED signal=%s reason=%s", event.signal_id, reason)
         fire(self._log_decision("SIGNAL_REJECTED", event, {"reason": reason}))
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.log_audit(
-                        session, "risk_registry", "WARNING",
-                        f"signal {event.signal_id} rejected: {reason}",
-                    )
+            await self._audit.log_audit(
+                "risk_registry",
+                "WARNING",
+                f"signal {event.signal_id} rejected: {reason}",
+            )
         except Exception:
             logger.debug("RiskRegistry: audit log failed for rejection %s", event.signal_id)
 
@@ -177,15 +175,12 @@ class RiskRegistry(AbstractRegistry):
         if event.tick_log_id == 0:
             return
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.log_decision(
-                        session,
-                        step=step,
-                        symbol=event.symbol,
-                        tick_log_id=event.tick_log_id,
-                        context=context,
-                        signal_id=event.signal_id,
-                    )
+            await self._audit.log_decision(
+                step=step,
+                symbol=event.symbol,
+                tick_log_id=event.tick_log_id,
+                context=context,
+                signal_id=event.signal_id,
+            )
         except Exception:
-            logger.warning("RiskRegistry: decision log failed for signal %s", event.signal_id)
+            logger.exception("RiskRegistry: decision log failed for signal %s", event.signal_id)

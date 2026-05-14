@@ -6,14 +6,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.messaging import AbstractRegistry
 from trading.core.schemas import CandleEvent, InstrumentType, SignalEvent
 from trading.core.tasks import fire
 from trading.indicators.context import IndicatorContext
 from trading.indicators.polars_store import PolarsStore
-from trading.storage.base import AbstractRepository
+from trading.storage.stores.audit import AbstractAuditStore
+from trading.storage.stores.chart import AbstractChartStore
+from trading.storage.stores.config import AbstractConfigStore
 from trading.strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
@@ -48,14 +49,16 @@ class AlgoRegistry(AbstractRegistry):
     def __init__(
         self,
         config: AlgoRunConfig,
-        session_factory: async_sessionmaker[AsyncSession],
-        repo: AbstractRepository,
+        chart: AbstractChartStore,
+        config_store: AbstractConfigStore,
+        audit: AbstractAuditStore,
         algos: dict[str, _AlgoInstance] | None = None,
         store: PolarsStore | None = None,
     ) -> None:
         self._config = config
-        self._session_factory = session_factory
-        self._repo = repo
+        self._chart = chart
+        self._config_store = config_store
+        self._audit = audit
         self._algos: dict[str, _AlgoInstance] = algos if algos is not None else {}
         self._store: PolarsStore = store if store is not None else PolarsStore()
         self._indicator_context: IndicatorContext = IndicatorContext(self._store)
@@ -69,28 +72,28 @@ class AlgoRegistry(AbstractRegistry):
     def set_indicator_context(self, context: IndicatorContext) -> None:
         self._indicator_context = context
 
-    def _make_chart_cb(self, symbol: str, interval: str) -> Callable[[str, str, float, datetime], None]:
+    def _make_chart_cb(
+        self, symbol: str, interval: str
+    ) -> Callable[[str, str, float, datetime], None]:
         def _cb(chart: str, series: str, value: float, ts: datetime) -> None:
             fire(self._log_chart(chart, series, value, ts, symbol, interval))
+
         return _cb
 
     async def _log_chart(
         self, chart: str, series: str, value: float, ts: datetime, symbol: str, interval: str
     ) -> None:
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.log_indicator(
-                        session,
-                        algo_name=self._config.algo_name,
-                        symbol=symbol,
-                        interval=interval,
-                        chart=chart,
-                        series=series,
-                        ts=ts,
-                        value=value,
-                        session_id=self._config.session_id,
-                    )
+            await self._chart.log_indicator(
+                algo_name=self._config.algo_name,
+                symbol=symbol,
+                interval=interval,
+                chart=chart,
+                series=series,
+                ts=ts,
+                value=value,
+                session_id=self._config.session_id,
+            )
         except Exception:
             logger.warning("AlgoRegistry: indicator log failed for %s/%s", chart, series)
 
@@ -150,7 +153,10 @@ class AlgoRegistry(AbstractRegistry):
 
         logger.info(
             "AlgoRegistry[%s]: signal %s %s %s",
-            self._config.algo_name, signal.signal_id, signal.side, signal.symbol,
+            self._config.algo_name,
+            signal.signal_id,
+            signal.side,
+            signal.symbol,
         )
         return [signal_event]
 
@@ -167,34 +173,27 @@ class AlgoRegistry(AbstractRegistry):
             **instance.strategy.get_state(),
         }
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.upsert_algo_state(
-                        session, self._config.algo_name, state
-                    )
+            await self._config_store.upsert_algo_state(self._config.algo_name, state)
         except Exception:
-            logger.debug("AlgoRegistry: state upsert failed for %s", self._config.algo_name)
+            logger.warning("AlgoRegistry: state upsert failed for %s", self._config.algo_name, exc_info=True)
 
     async def _log_signal(self, event: SignalEvent, algo_name: str) -> None:
         if event.tick_log_id == 0:
             return
         try:
-            async with self._session_factory() as session:
-                async with session.begin():
-                    await self._repo.log_decision(
-                        session,
-                        step="SIGNAL_GENERATED",
-                        symbol=event.symbol,
-                        tick_log_id=event.tick_log_id,
-                        context={
-                            "strategy_id": event.strategy_id,
-                            "side": event.side.value,
-                            "signal_type": event.signal_type.value,
-                            "stop_distance": event.stop_distance,
-                            "algo_name": algo_name,
-                        },
-                        algo_name=algo_name,
-                        signal_id=event.signal_id,
-                    )
+            await self._audit.log_decision(
+                step="SIGNAL_GENERATED",
+                symbol=event.symbol,
+                tick_log_id=event.tick_log_id,
+                context={
+                    "strategy_id": event.strategy_id,
+                    "side": event.side.value,
+                    "signal_type": event.signal_type.value,
+                    "stop_distance": event.stop_distance,
+                    "algo_name": algo_name,
+                },
+                algo_name=algo_name,
+                signal_id=event.signal_id,
+            )
         except Exception:
-            logger.warning("AlgoRegistry: decision log failed for signal %s", event.signal_id)
+            logger.exception("AlgoRegistry: decision log failed for signal %s", event.signal_id)
