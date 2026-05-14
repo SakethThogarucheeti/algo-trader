@@ -76,9 +76,9 @@ async def test_ruin_probability_low_for_profitable_strategy(tmp_path):
     sim = MonteCarloSimulator(config=config, trades=trades, results_dir=tmp_path)
     report = await sim.run()
 
-    assert (
-        report.probability_of_ruin < 0.05
-    ), f"Profitable strategy should have low ruin probability, got {report.probability_of_ruin:.2%}"
+    assert report.probability_of_ruin < 0.05, (
+        f"Profitable strategy should have low ruin probability, got {report.probability_of_ruin:.2%}"
+    )
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ Grid read from strategy_config.json (grids.opening_range_breakout).
 
 Requires: data/ directory populated via ``uv run fetch-data``
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,10 +53,17 @@ _MONTHS: int | None = _HP.months
 
 _RESULTS_CSV = Path(__file__).parent / "orb_search_results.csv"
 _CSV_FIELDS = [
-    "orb_bars", "atr_multiplier",
-    "sharpe", "cagr", "max_dd", "calmar",
-    "win_rate", "profit_factor",
-    "total_trades", "pnl", "final_equity",
+    "orb_bars",
+    "atr_multiplier",
+    "sharpe",
+    "cagr",
+    "max_dd",
+    "calmar",
+    "win_rate",
+    "profit_factor",
+    "total_trades",
+    "pnl",
+    "final_equity",
 ]
 
 
@@ -87,10 +95,8 @@ class GridResult:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
 
-async def _run_one(
-    orb_bars: int, atr_mult: float, pg_engine, tmp_path
-) -> BacktestReport:
-    schema = f"bt_orb_{orb_bars}_{str(atr_mult).replace('.','_')}"
+async def _run_one(orb_bars: int, atr_mult: float, pg_engine, tmp_path) -> BacktestReport:
+    schema = f"bt_orb_{orb_bars}_{str(atr_mult).replace('.', '_')}"
     config = BacktestConfig(
         algo=AlgoSettings(
             name=schema,
@@ -107,8 +113,10 @@ async def _run_one(
         strategy_params={"orb_bars": orb_bars, "atr_multiplier": atr_mult},
     )
     session = BacktestSession(
-        config=config, db_engine=pg_engine,
-        results_dir=tmp_path, db_schema=schema,
+        config=config,
+        db_engine=pg_engine,
+        results_dir=tmp_path,
+        db_schema=schema,
         keep_schema=True,
     )
     return await session.run()
@@ -130,10 +138,10 @@ def _print_table(results: list[GridResult]) -> None:
         f"{'Params':<24} {'Sharpe':>8} {'PnL':>8} {'CAGR':>7} {'MaxDD':>7}"
         f" {'Calmar':>7} {'WinR':>6} {'PF':>6} {'Trades':>7}"
     )
-    print(f"\n{'='*W}")
+    print(f"\n{'=' * W}")
     print("  Opening Range Breakout Hyperparameter Grid Search")
     print(f"  Symbols: {', '.join(_SYMBOLS)}  Period: {_start().date()} to {_END.date()}")
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     print(header)
     print("-" * W)
     for r in ranked:
@@ -142,13 +150,13 @@ def _print_table(results: list[GridResult]) -> None:
             f" {r.max_dd:>7.1%} {r.calmar:>7.2f} {r.win_rate:>6.0%}"
             f" {r.profit_factor:>6.2f} {r.total_trades:>7}"
         )
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     best = ranked[0]
     print(
         f"  Best: {best.label()}  Sharpe={best.sharpe:.3f}"
         f"  PnL={best.pnl:+.0f}  WinR={best.win_rate:.0%}"
     )
-    print(f"{'='*W}\n")
+    print(f"{'=' * W}\n")
 
 
 async def test_orb_grid_search(pg_engine, tmp_path):
@@ -167,10 +175,14 @@ async def test_orb_grid_search(pg_engine, tmp_path):
             print(f"  [{i}/{len(combos)}] ORB({mins}min) ATRx{atr} starting...", flush=True)
             report = await _run_one(orb, atr, pg_engine, tmp_path)
             result = GridResult(
-                orb_bars=orb, atr_multiplier=atr,
-                sharpe=report.sharpe_ratio, cagr=report.cagr,
-                max_dd=report.max_drawdown, calmar=report.calmar_ratio,
-                win_rate=report.win_rate, profit_factor=report.profit_factor,
+                orb_bars=orb,
+                atr_multiplier=atr,
+                sharpe=report.sharpe_ratio,
+                cagr=report.cagr,
+                max_dd=report.max_drawdown,
+                calmar=report.calmar_ratio,
+                win_rate=report.win_rate,
+                profit_factor=report.profit_factor,
                 total_trades=report.total_trades,
                 pnl=report.final_equity - _EQUITY,
                 final_equity=report.final_equity,
@@ -191,7 +203,8 @@ async def test_orb_grid_search(pg_engine, tmp_path):
     _print_table(list(results))
 
     from sqlalchemy import text
+
     async with pg_engine.begin() as conn:
         for orb, atr in combos:
-            schema = f"bt_orb_{orb}_{str(atr).replace('.','_')}"
+            schema = f"bt_orb_{orb}_{str(atr).replace('.', '_')}"
             await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))

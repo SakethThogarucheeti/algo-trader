@@ -81,7 +81,7 @@ class WalkForwardReport(SessionReport):
         from plotly.io import to_html as plotly_to_html
 
         figs: list[go.Figure] = []
-        window_labels = [f"W{i+1}" for i in range(len(self.windows))]
+        window_labels = [f"W{i + 1}" for i in range(len(self.windows))]
 
         # 1 — Combined equity curve (with train/test band shading)
         eq_fig = go.Figure()

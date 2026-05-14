@@ -162,7 +162,8 @@ class EquityTracker:
             if price is None:
                 logger.warning(
                     "EquityTracker: no close price for %s — using entry price %.4f (zero PnL)",
-                    symbol, pos.entry_price,
+                    symbol,
+                    pos.entry_price,
                 )
                 price = pos.entry_price
             if pos.side == Side.BUY:

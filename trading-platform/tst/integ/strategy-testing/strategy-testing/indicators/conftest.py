@@ -1,13 +1,14 @@
 """Fixtures shared by indicator integration tests."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from testing.backtesting.data_loader import BrokerDataLoader, FileDataLoader
 from testing.simulators.synthetic_broker import SyntheticDataBroker
+
 from trading.core.clock import SimulatedClock
 from trading.indicators.polars_store import PolarsStore
 
@@ -16,10 +17,10 @@ from trading.indicators.polars_store import PolarsStore
 #                                    [4]=tst [5]=trading-platform)
 _DATA_DIR = Path(__file__).parents[5] / "data"
 
-_DEFAULT_SYMBOL   = "INFY"
+_DEFAULT_SYMBOL = "INFY"
 _DEFAULT_INTERVAL = "15min"
-_MONTH_END        = datetime(2026, 4, 17, tzinfo=UTC)
-_MONTH_START      = _MONTH_END - timedelta(days=30)
+_MONTH_END = datetime(2026, 4, 17, tzinfo=UTC)
+_MONTH_START = _MONTH_END - timedelta(days=30)
 
 
 # ---------------------------------------------------------------------------

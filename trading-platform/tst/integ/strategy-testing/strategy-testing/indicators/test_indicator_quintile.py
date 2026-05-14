@@ -24,78 +24,51 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
-from trading.indicators.library.adx import ADX
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.bollinger import BollingerBands
-from trading.indicators.library.cci import CCI
-from trading.indicators.library.chaikin_volatility import ChaikinVolatility
-from trading.indicators.library.cmf import CMF
-from trading.indicators.library.connors_rsi import ConnorsRSI
-from trading.indicators.library.donchian import DonchianChannels
-from trading.indicators.library.dpo import DPO
-from trading.indicators.library.ema import EMA
-from trading.indicators.library.fisher_transform import FisherTransform
-from trading.indicators.library.gap import GapSize
-from trading.indicators.library.historical_volatility import HistoricalVolatility
-from trading.indicators.library.keltner import KeltnerChannels
-from trading.indicators.library.macd import MACD
-from trading.indicators.library.mfi import MFI
-from trading.indicators.library.momentum import Momentum
-from trading.indicators.library.normalized_atr import NormalizedATR
-from trading.indicators.library.obv import OBV
-from trading.indicators.library.opening_range import OpeningRangePosition
-from trading.indicators.library.parabolic_sar import ParabolicSAR
-from trading.indicators.library.pvt import PVT
-from trading.indicators.library.roc import ROC
-from trading.indicators.library.rsi import RSI
-from trading.indicators.library.rvol import RVOL
 from trading.indicators.library.session_high_low_pct import SessionHighLowPct
-from trading.indicators.library.sma import SMA
-from trading.indicators.library.squeeze_momentum import SqueezeMomentum
-from trading.indicators.library.stochastic import Stochastic
-from trading.indicators.library.supertrend import Supertrend
-from trading.indicators.library.tsi import TSI
-from trading.indicators.library.ultimate_oscillator import UltimateOscillator
-from trading.indicators.library.volatility_ratio import VolatilityRatio
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.library.vroc import VROC
-from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
-from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
-_INTERVAL  = "15min"
-_WARMUP    = 100
-_HORIZONS  = [5, 15, 30, 50]
+_INTERVAL = "15min"
+_WARMUP = 100
+_HORIZONS = [5, 15, 30, 50]
 
-_MONTH_END   = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
 _MONTH_START = _MONTH_END - timedelta(days=400)
 
 _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
@@ -104,6 +77,7 @@ _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
+
 
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 4:
@@ -129,9 +103,7 @@ def _assign_quintiles(signals: np.ndarray) -> np.ndarray:
     return quintiles
 
 
-def _quintile_stats(
-    signals: np.ndarray, fwds: np.ndarray
-) -> tuple[list[float], list[float]]:
+def _quintile_stats(signals: np.ndarray, fwds: np.ndarray) -> tuple[list[float], list[float]]:
     """
     Returns (mean_returns_per_quintile, hitrate_per_quintile) as 5-element lists.
     Quintile 0 = lowest signal (most oversold), Quintile 4 = highest (most overbought).
@@ -155,6 +127,7 @@ def _quintile_stats(
 # ---------------------------------------------------------------------------
 # Worker — module-level for pickling
 # ---------------------------------------------------------------------------
+
 
 def _worker_quintile(args: tuple[str, list[dict]]) -> dict[str, Any]:
     """
@@ -263,6 +236,7 @@ def _worker_quintile(args: tuple[str, list[dict]]) -> dict[str, Any]:
 # Main test
 # ---------------------------------------------------------------------------
 
+
 async def test_indicator_quintile_analysis(make_store) -> None:
     """
     Verify monotonicity: Q1 (lowest signal) should have higher returns than Q5.
@@ -315,14 +289,14 @@ async def test_indicator_quintile_analysis(make_store) -> None:
 
             row: dict[str, Any] = {
                 "indicator": label,
-                "horizon":   h,
-                "n":         len(pairs),
-                "Q1_ret":    means[0],
-                "Q2_ret":    means[1],
-                "Q3_ret":    means[2],
-                "Q4_ret":    means[3],
-                "Q5_ret":    means[4],
-                "spread":    spread,
+                "horizon": h,
+                "n": len(pairs),
+                "Q1_ret": means[0],
+                "Q2_ret": means[1],
+                "Q3_ret": means[2],
+                "Q4_ret": means[3],
+                "Q5_ret": means[4],
+                "spread": spread,
                 "Q1_hitrate": hitrates[0],
                 "Q5_hitrate": hitrates[4],
             }
@@ -343,25 +317,32 @@ async def test_indicator_quintile_analysis(make_store) -> None:
     )
 
     # Print summary for 5-bar horizon only
-    print(f"\n{'='*100}")
-    print(f"  Indicator Quintile Analysis  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols")
-    print(f"  (Showing horizon=5 rows sorted by |spread|)")
-    print(f"{'='*100}")
-    print(f"  {'Indicator':<22}  {'Q1':>8}  {'Q2':>8}  {'Q3':>8}  {'Q4':>8}  {'Q5':>8}  {'Spread':>9}  {'Q1_hr':>7}  {'Q5_hr':>7}")
-    print(f"  {'-'*95}")
+    print(f"\n{'=' * 100}")
+    print(
+        f"  Indicator Quintile Analysis  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols"
+    )
+    print("  (Showing horizon=5 rows sorted by |spread|)")
+    print(f"{'=' * 100}")
+    print(
+        f"  {'Indicator':<22}  {'Q1':>8}  {'Q2':>8}  {'Q3':>8}  {'Q4':>8}  {'Q5':>8}  {'Spread':>9}  {'Q1_hr':>7}  {'Q5_hr':>7}"
+    )
+    print(f"  {'-' * 95}")
     for r in summary_rows:
         if r["horizon"] != 5:
             continue
+
         def _fmt(v: float) -> str:
             return f"{v:+.4f}" if np.isfinite(v) else "     nan"
+
         def _fmtp(v: float) -> str:
             return f"{v:.3f}" if np.isfinite(v) else "    nan"
+
         print(
             f"  {r['indicator']:<22}  {_fmt(r['Q1_ret'])}  {_fmt(r['Q2_ret'])}  "
             f"{_fmt(r['Q3_ret'])}  {_fmt(r['Q4_ret'])}  {_fmt(r['Q5_ret'])}  "
             f"{_fmt(r['spread'])}  {_fmtp(r['Q1_hitrate'])}  {_fmtp(r['Q5_hitrate'])}"
         )
-    print(f"{'='*100}")
+    print(f"{'=' * 100}")
 
     # Write CSV
     reports_dir = Path(__file__).parent / "reports"
@@ -390,8 +371,19 @@ async def test_indicator_quintile_analysis(make_store) -> None:
             return "#ffcdd2"
         return "#ffffff"
 
-    col_keys = ["indicator", "horizon", "n", "Q1_ret", "Q2_ret", "Q3_ret", "Q4_ret", "Q5_ret",
-                "spread", "Q1_hitrate", "Q5_hitrate"]
+    col_keys = [
+        "indicator",
+        "horizon",
+        "n",
+        "Q1_ret",
+        "Q2_ret",
+        "Q3_ret",
+        "Q4_ret",
+        "Q5_ret",
+        "spread",
+        "Q1_hitrate",
+        "Q5_hitrate",
+    ]
     th = "".join(f"<th>{c}</th>" for c in col_keys)
     html_rows = []
     for r in summary_rows:
@@ -404,7 +396,11 @@ async def test_indicator_quintile_analysis(make_store) -> None:
                 cells.append(f"<td>{int(v) if np.isfinite(float(v)) else v}</td>")
             elif key == "spread":
                 color = _spread_color(float(v))
-                fmt = f"{float(v):+.4f}" if isinstance(v, (int, float)) and np.isfinite(float(v)) else "nan"
+                fmt = (
+                    f"{float(v):+.4f}"
+                    if isinstance(v, (int, float)) and np.isfinite(float(v))
+                    else "nan"
+                )
                 cells.append(f'<td style="background:{color};font-weight:bold">{fmt}</td>')
             elif key in ("Q1_ret", "Q2_ret", "Q3_ret", "Q4_ret", "Q5_ret"):
                 fv = float(v)
@@ -438,7 +434,7 @@ async def test_indicator_quintile_analysis(make_store) -> None:
 <table>
 <thead><tr>{th}</tr></thead>
 <tbody>
-{''.join(html_rows)}
+{"".join(html_rows)}
 </tbody>
 </table>
 </body>

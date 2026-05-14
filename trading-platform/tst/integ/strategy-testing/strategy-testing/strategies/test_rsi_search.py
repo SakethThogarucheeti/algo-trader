@@ -8,6 +8,7 @@ Each completed combo is appended to rsi_search_results.csv immediately.
 
 Requires: data/ directory populated via ``uv run fetch-data``
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,8 +41,12 @@ pytestmark = pytest.mark.skipif(
 _CFG = load_strategy_config()
 _HP = _CFG.hyperparam_search
 _STRAT = _CFG.strategies.get("rsi_mean_reversion")
-_GRID = _CFG.hyperparam_search.grid if _HP.active_strategy == "rsi_mean_reversion" else (
-    _CFG.hyperparam_search.grid  # fall back to whatever grid is loaded
+_GRID = (
+    _CFG.hyperparam_search.grid
+    if _HP.active_strategy == "rsi_mean_reversion"
+    else (
+        _CFG.hyperparam_search.grid  # fall back to whatever grid is loaded
+    )
 )
 # Always read the RSI-specific grid regardless of active_strategy setting
 _RSI_GRID = (
@@ -69,10 +74,18 @@ _MONTHS: int | None = _HP.months
 
 _RESULTS_CSV = Path(__file__).parent / "rsi_search_results.csv"
 _CSV_FIELDS = [
-    "oversold", "overbought", "atr_multiplier",
-    "sharpe", "cagr", "max_dd", "calmar",
-    "win_rate", "profit_factor",
-    "total_trades", "pnl", "final_equity",
+    "oversold",
+    "overbought",
+    "atr_multiplier",
+    "sharpe",
+    "cagr",
+    "max_dd",
+    "calmar",
+    "win_rate",
+    "profit_factor",
+    "total_trades",
+    "pnl",
+    "final_equity",
 ]
 
 
@@ -128,8 +141,10 @@ async def _run_one(
         },
     )
     session = BacktestSession(
-        config=config, db_engine=pg_engine,
-        results_dir=tmp_path, db_schema=schema,
+        config=config,
+        db_engine=pg_engine,
+        results_dir=tmp_path,
+        db_schema=schema,
         keep_schema=True,
     )
     return await session.run()
@@ -151,14 +166,14 @@ def _print_table(results: list[GridResult]) -> None:
         f"{'Params':<30} {'Sharpe':>8} {'PnL':>8} {'CAGR':>7} {'MaxDD':>7}"
         f" {'Calmar':>7} {'WinR':>6} {'PF':>6} {'Trades':>7}"
     )
-    print(f"\n{'='*W}")
+    print(f"\n{'=' * W}")
     print("  RSI Mean-Reversion Hyperparameter Grid Search")
     print(f"  Symbols : {', '.join(_SYMBOLS)}")
     print(
         f"  Period  : {_start().date()} to {_END.date()}"
         f"  Interval: {_INTERVAL}  Equity: {_EQUITY:,.0f}"
     )
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     print(header)
     print("-" * W)
     for r in ranked:
@@ -167,23 +182,19 @@ def _print_table(results: list[GridResult]) -> None:
             f" {r.max_dd:>7.1%} {r.calmar:>7.2f} {r.win_rate:>6.0%}"
             f" {r.profit_factor:>6.2f} {r.total_trades:>7}"
         )
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     best = ranked[0]
     print(
         f"  Best: {best.label()}  Sharpe={best.sharpe:.3f}  PnL={best.pnl:+.0f}"
         f"  WinR={best.win_rate:.0%}  PF={best.profit_factor:.2f}"
     )
-    print(f"{'='*W}\n")
+    print(f"{'=' * W}\n")
 
 
 async def test_rsi_grid_search(pg_engine, tmp_path):
     """RSI mean-reversion grid search — reads grid from strategy_config.json."""
     all_combos = itertools.product(_OVERSOLD_LEVELS, _OVERBOUGHT_LEVELS, _ATR_MULTIPLIERS)
-    combos = [
-        (os_, ob, atr)
-        for os_, ob, atr in all_combos
-        if os_ < ob
-    ]
+    combos = [(os_, ob, atr) for os_, ob, atr in all_combos if os_ < ob]
 
     _sem = asyncio.Semaphore(1)
     _csv_lock = asyncio.Lock()
@@ -203,10 +214,15 @@ async def test_rsi_grid_search(pg_engine, tmp_path):
             )
             report = await _run_one(os_, ob, atr, pg_engine, tmp_path)
             result = GridResult(
-                oversold=os_, overbought=ob, atr_multiplier=atr,
-                sharpe=report.sharpe_ratio, cagr=report.cagr,
-                max_dd=report.max_drawdown, calmar=report.calmar_ratio,
-                win_rate=report.win_rate, profit_factor=report.profit_factor,
+                oversold=os_,
+                overbought=ob,
+                atr_multiplier=atr,
+                sharpe=report.sharpe_ratio,
+                cagr=report.cagr,
+                max_dd=report.max_drawdown,
+                calmar=report.calmar_ratio,
+                win_rate=report.win_rate,
+                profit_factor=report.profit_factor,
                 total_trades=report.total_trades,
                 pnl=report.final_equity - _EQUITY,
                 final_equity=report.final_equity,
@@ -227,6 +243,7 @@ async def test_rsi_grid_search(pg_engine, tmp_path):
     _print_table(list(results))
 
     from sqlalchemy import text
+
     async with pg_engine.begin() as conn:
         for os_, ob, atr in combos:
             schema = f"bt_rsi_{int(os_)}_{int(ob)}_{str(atr).replace('.', '_')}"

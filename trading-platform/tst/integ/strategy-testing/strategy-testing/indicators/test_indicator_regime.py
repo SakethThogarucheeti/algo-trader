@@ -25,90 +25,66 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
 from trading.indicators.library.adx import ADX
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.bollinger import BollingerBands
-from trading.indicators.library.cci import CCI
-from trading.indicators.library.chaikin_volatility import ChaikinVolatility
-from trading.indicators.library.cmf import CMF
-from trading.indicators.library.connors_rsi import ConnorsRSI
-from trading.indicators.library.donchian import DonchianChannels
-from trading.indicators.library.dpo import DPO
-from trading.indicators.library.ema import EMA
-from trading.indicators.library.fisher_transform import FisherTransform
-from trading.indicators.library.gap import GapSize
 from trading.indicators.library.historical_volatility import HistoricalVolatility
-from trading.indicators.library.keltner import KeltnerChannels
-from trading.indicators.library.macd import MACD
-from trading.indicators.library.mfi import MFI
-from trading.indicators.library.momentum import Momentum
-from trading.indicators.library.normalized_atr import NormalizedATR
-from trading.indicators.library.obv import OBV
-from trading.indicators.library.opening_range import OpeningRangePosition
-from trading.indicators.library.parabolic_sar import ParabolicSAR
-from trading.indicators.library.pvt import PVT
-from trading.indicators.library.roc import ROC
-from trading.indicators.library.rsi import RSI
-from trading.indicators.library.rvol import RVOL
 from trading.indicators.library.session_high_low_pct import SessionHighLowPct
-from trading.indicators.library.sma import SMA
-from trading.indicators.library.squeeze_momentum import SqueezeMomentum
-from trading.indicators.library.stochastic import Stochastic
-from trading.indicators.library.supertrend import Supertrend
-from trading.indicators.library.tsi import TSI
-from trading.indicators.library.ultimate_oscillator import UltimateOscillator
-from trading.indicators.library.volatility_ratio import VolatilityRatio
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.library.vroc import VROC
-from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
-from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
-_INTERVAL  = "15min"
-_WARMUP    = 100
-_HORIZON   = 5   # 5-bar forward return only
+_INTERVAL = "15min"
+_WARMUP = 100
+_HORIZON = 5  # 5-bar forward return only
 
-_MONTH_END   = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
 _MONTH_START = _MONTH_END - timedelta(days=400)
 
 _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
 
 # ADX regime thresholds
 _ADX_TRENDING = 25.0
-_ADX_RANGING  = 20.0
+_ADX_RANGING = 20.0
 
 
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
+
 
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 4:
@@ -135,7 +111,7 @@ def _compute_ic_rolling(signals: list[float], fwds: list[float], window: int = 2
     s, f = s[mask], f[mask]
     ics: list[float] = []
     for start in range(0, len(s) - window + 1, window // 2):
-        ic = _spearman(s[start: start + window], f[start: start + window])
+        ic = _spearman(s[start : start + window], f[start : start + window])
         if np.isfinite(ic):
             ics.append(ic)
     return ics
@@ -144,6 +120,7 @@ def _compute_ic_rolling(signals: list[float], fwds: list[float], window: int = 2
 # ---------------------------------------------------------------------------
 # Worker — module-level for pickling
 # ---------------------------------------------------------------------------
+
 
 def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
     """
@@ -164,7 +141,6 @@ def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
         from testing.indicators.catalogue import load_catalogue
 
         catalogue = load_catalogue("15min")
-        store_main = PolarsStore(maxlen=500)
         closes = np.array([r["close"] for r in rows], dtype=float)
 
         # Forward returns at horizon 5
@@ -174,15 +150,15 @@ def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
 
         # Regime indicators: ADX and HV computed in a separate store/instance
         adx_store = PolarsStore(maxlen=500)
-        hv_store  = PolarsStore(maxlen=500)
-        adx_ind   = ADX(adx_store, symbol, _INTERVAL)
-        hv_ind    = HistoricalVolatility(hv_store, symbol, _INTERVAL)
+        hv_store = PolarsStore(maxlen=500)
+        adx_ind = ADX(adx_store, symbol, _INTERVAL)
+        hv_ind = HistoricalVolatility(hv_store, symbol, _INTERVAL)
         adx_params = ADX.Parameters(period=14)
-        hv_params  = HistoricalVolatility.Parameters(period=20)
+        hv_params = HistoricalVolatility.Parameters(period=20)
         regime_clock = SimulatedClock()
 
         adx_vals: list[float | None] = []
-        hv_vals:  list[float | None] = []
+        hv_vals: list[float | None] = []
 
         for i, row in enumerate(rows):
             regime_clock.advance(row["ts"])
@@ -223,9 +199,9 @@ def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
                 ind = cls(store, symbol, _INTERVAL)
 
             trending_pairs: list[tuple[float, float]] = []
-            ranging_pairs:  list[tuple[float, float]] = []
+            ranging_pairs: list[tuple[float, float]] = []
             high_vol_pairs: list[tuple[float, float]] = []
-            low_vol_pairs:  list[tuple[float, float]] = []
+            low_vol_pairs: list[tuple[float, float]] = []
 
             for i, row in enumerate(rows):
                 clock.advance(row["ts"])
@@ -304,9 +280,9 @@ def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
 
             result[label] = {
                 "trending": trending_pairs,
-                "ranging":  ranging_pairs,
+                "ranging": ranging_pairs,
                 "high_vol": high_vol_pairs,
-                "low_vol":  low_vol_pairs,
+                "low_vol": low_vol_pairs,
             }
 
         return result
@@ -317,6 +293,7 @@ def _worker_regime(args: tuple[str, list[dict]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main test
 # ---------------------------------------------------------------------------
+
 
 async def test_indicator_regime_analysis(make_store) -> None:
     """
@@ -336,8 +313,7 @@ async def test_indicator_regime_analysis(make_store) -> None:
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor() as executor:
         futures = [
-            loop.run_in_executor(executor, _worker_regime, (sym, rows))
-            for sym, rows in symbol_rows
+            loop.run_in_executor(executor, _worker_regime, (sym, rows)) for sym, rows in symbol_rows
         ]
         per_symbol: list[dict[str, Any]] = await asyncio.gather(*futures)
 
@@ -360,19 +336,19 @@ async def test_indicator_regime_analysis(make_store) -> None:
         for regime in ("trending", "ranging", "high_vol", "low_vol"):
             pairs = agg[label][regime]
             if len(pairs) < 20:
-                row[f"IC_{regime}"]   = _nan
+                row[f"IC_{regime}"] = _nan
                 row[f"ICIR_{regime}"] = _nan
-                row[f"n_{regime}"]    = len(pairs)
+                row[f"n_{regime}"] = len(pairs)
                 continue
             sigs = np.array([p[0] for p in pairs])
             fwds = np.array([p[1] for p in pairs])
-            row[f"IC_{regime}"]   = _spearman(sigs, fwds)
-            row[f"n_{regime}"]    = len(pairs)
+            row[f"IC_{regime}"] = _spearman(sigs, fwds)
+            row[f"n_{regime}"] = len(pairs)
 
             # Rolling ICIR
             ic_list: list[float] = []
             for start in range(0, len(sigs) - _IC_WINDOW + 1, _IC_WINDOW // 2):
-                ic = _spearman(sigs[start: start + _IC_WINDOW], fwds[start: start + _IC_WINDOW])
+                ic = _spearman(sigs[start : start + _IC_WINDOW], fwds[start : start + _IC_WINDOW])
                 if np.isfinite(ic):
                     ic_list.append(ic)
             row[f"ICIR_{regime}"] = _icir(ic_list)
@@ -381,27 +357,35 @@ async def test_indicator_regime_analysis(make_store) -> None:
 
     # Sort by max absolute IC across regimes
     def _best_ic(r: dict) -> float:
-        vals = [abs(r[f"IC_{reg}"]) for reg in ("trending", "ranging") if np.isfinite(r[f"IC_{reg}"])]
+        vals = [
+            abs(r[f"IC_{reg}"]) for reg in ("trending", "ranging") if np.isfinite(r[f"IC_{reg}"])
+        ]
         return max(vals) if vals else 0.0
 
     summary.sort(key=_best_ic, reverse=True)
 
     # Print table
-    print(f"\n{'='*110}")
-    print(f"  Indicator Regime IC  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols  |  Horizon={_HORIZON}")
-    print(f"{'='*110}")
-    print(f"  {'Indicator':<20}  {'IC_trend':>9}  {'IC_range':>9}  {'IC_hvol':>9}  {'IC_lvol':>9}  {'ICIR_trend':>11}  {'ICIR_range':>11}")
-    print(f"  {'-'*100}")
+    print(f"\n{'=' * 110}")
+    print(
+        f"  Indicator Regime IC  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols  |  Horizon={_HORIZON}"
+    )
+    print(f"{'=' * 110}")
+    print(
+        f"  {'Indicator':<20}  {'IC_trend':>9}  {'IC_range':>9}  {'IC_hvol':>9}  {'IC_lvol':>9}  {'ICIR_trend':>11}  {'ICIR_range':>11}"
+    )
+    print(f"  {'-' * 100}")
     for r in summary:
+
         def _fmt(v: float) -> str:
             return f"{v:+.3f}" if np.isfinite(v) else "    nan"
+
         print(
             f"  {r['indicator']:<20}  "
             f"{_fmt(r['IC_trending']):>9}  {_fmt(r['IC_ranging']):>9}  "
             f"{_fmt(r['IC_high_vol']):>9}  {_fmt(r['IC_low_vol']):>9}  "
             f"{_fmt(r['ICIR_trending']):>11}  {_fmt(r['ICIR_ranging']):>11}"
         )
-    print(f"{'='*110}")
+    print(f"{'=' * 110}")
 
     # Write CSV
     reports_dir = Path(__file__).parent / "reports"
@@ -437,14 +421,14 @@ async def test_indicator_regime_analysis(make_store) -> None:
         return "#ffffff"
 
     regime_cols = [
-        ("IC_trending",   "IC_trending"),
-        ("IC_ranging",    "IC_ranging"),
-        ("IC_high_vol",   "IC_high_vol"),
-        ("IC_low_vol",    "IC_low_vol"),
+        ("IC_trending", "IC_trending"),
+        ("IC_ranging", "IC_ranging"),
+        ("IC_high_vol", "IC_high_vol"),
+        ("IC_low_vol", "IC_low_vol"),
         ("ICIR_trending", "ICIR_trending"),
-        ("ICIR_ranging",  "ICIR_ranging"),
-        ("n_trending",    "n_trending"),
-        ("n_ranging",     "n_ranging"),
+        ("ICIR_ranging", "ICIR_ranging"),
+        ("n_trending", "n_trending"),
+        ("n_ranging", "n_ranging"),
     ]
     th = "<th>indicator</th>" + "".join(f"<th>{col[1]}</th>" for col in regime_cols)
     html_rows = []
@@ -486,7 +470,7 @@ async def test_indicator_regime_analysis(make_store) -> None:
 <table>
 <thead><tr>{th}</tr></thead>
 <tbody>
-{''.join(html_rows)}
+{"".join(html_rows)}
 </tbody>
 </table>
 </body>
@@ -499,7 +483,8 @@ async def test_indicator_regime_analysis(make_store) -> None:
     # Soft assertion
     assert len(summary) > 0, "Expected regime analysis to produce at least one indicator row"
     n_finite = sum(
-        1 for r in summary
+        1
+        for r in summary
         if np.isfinite(r.get("IC_trending", _nan)) or np.isfinite(r.get("IC_ranging", _nan))
     )
     assert n_finite > 0, "Expected at least one indicator with finite regime IC"

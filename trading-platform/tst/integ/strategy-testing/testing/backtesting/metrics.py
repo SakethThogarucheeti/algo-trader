@@ -28,15 +28,9 @@ def _daily_equity(equity_curve: pl.DataFrame) -> pl.DataFrame:
     if len(equity_curve) == 0:
         return equity_curve
 
-    df = equity_curve.with_columns(
-        pl.col("date").dt.date().alias("day")
-    )
+    df = equity_curve.with_columns(pl.col("date").dt.date().alias("day"))
     # Last equity value per calendar day
-    daily = (
-        df.group_by("day")
-        .agg(pl.col("equity").last())
-        .sort("day")
-    )
+    daily = df.group_by("day").agg(pl.col("equity").last()).sort("day")
     return daily.rename({"day": "date"})
 
 
@@ -183,9 +177,11 @@ def cagr(
     # Handle polars Date vs datetime
     from datetime import date as _date
     from datetime import datetime as _datetime
+
     def _to_dt(d: object) -> _datetime:
         if isinstance(d, _date) and not isinstance(d, _datetime):
             from datetime import UTC
+
             return _datetime(d.year, d.month, d.day, tzinfo=UTC)
         return d  # type: ignore[return-value]
 
@@ -218,5 +214,3 @@ def calmar_ratio(equity_curve: pl.DataFrame, start: object = None, end: object =
     if _mdd == 0.0:
         return 0.0
     return _cagr / _mdd
-
-

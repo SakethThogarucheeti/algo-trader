@@ -35,89 +35,111 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import polars as pl
-import pytest
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
 from trading.indicators.library.adx import ADX
+from trading.indicators.library.aroon import Aroon
 from trading.indicators.library.atr import ATR
 from trading.indicators.library.bollinger import BollingerBands
+from trading.indicators.library.candle_body_ratio import CandleBodyRatio
 from trading.indicators.library.cci import CCI
 from trading.indicators.library.chaikin_volatility import ChaikinVolatility
+from trading.indicators.library.chandelier_exit import ChandelierExit
 from trading.indicators.library.cmf import CMF
 from trading.indicators.library.connors_rsi import ConnorsRSI
+from trading.indicators.library.coppock_curve import CoppockCurve
+from trading.indicators.library.distance_from_ma import DistanceFromMA
 from trading.indicators.library.donchian import DonchianChannels
 from trading.indicators.library.dpo import DPO
+from trading.indicators.library.elder_ray import ElderRay
 from trading.indicators.library.ema import EMA
 from trading.indicators.library.fisher_transform import FisherTransform
 from trading.indicators.library.historical_volatility import HistoricalVolatility
+from trading.indicators.library.inside_bar import InsideBar
 from trading.indicators.library.keltner import KeltnerChannels
+from trading.indicators.library.linreg_slope import LinearRegressionSlope
 from trading.indicators.library.macd import MACD
+from trading.indicators.library.mean_reversion_score import MeanReversionScore
 from trading.indicators.library.mfi import MFI
 from trading.indicators.library.momentum import Momentum
 from trading.indicators.library.normalized_atr import NormalizedATR
 from trading.indicators.library.obv import OBV
 from trading.indicators.library.parabolic_sar import ParabolicSAR
+from trading.indicators.library.price_percentile import PricePercentile
+from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.library.pvt import PVT
 from trading.indicators.library.roc import ROC
 from trading.indicators.library.rsi import RSI
+from trading.indicators.library.rsi_divergence import RSIDivergence
 from trading.indicators.library.rvol import RVOL
-from trading.indicators.library.sma import SMA
 from trading.indicators.library.squeeze_momentum import SqueezeMomentum
 from trading.indicators.library.stochastic import Stochastic
+from trading.indicators.library.stochastic_rsi import StochasticRSI
 from trading.indicators.library.supertrend import Supertrend
 from trading.indicators.library.tsi import TSI
 from trading.indicators.library.ultimate_oscillator import UltimateOscillator
+from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
 from trading.indicators.library.volatility_ratio import VolatilityRatio
 from trading.indicators.library.vroc import VROC
 from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
 from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
+from trading.indicators.library.williams_r import WilliamsR
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
 _INTERVAL = "day"
-_HORIZONS = [5, 10, 20]   # ~1 week, 2 weeks, 1 month
+_HORIZONS = [5, 10, 20]  # ~1 week, 2 weeks, 1 month
 _IC_WINDOW = 20
-_WARMUP    = 60            # fewer bars needed for daily warmup
+_WARMUP = 60  # fewer bars needed for daily warmup
 
-_MONTH_END   = datetime(2026, 4, 30, tzinfo=UTC)
-_MONTH_START = _MONTH_END - timedelta(days=1000)   # ~700 trading days
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_START = _MONTH_END - timedelta(days=1000)  # ~700 trading days
 
 # ---------------------------------------------------------------------------
 # Extractor sentinels — picklable strings, no lambdas crossing process boundary
 # ---------------------------------------------------------------------------
-_NEG = "neg"   # negate the value: -v
-_RSI = "rsi"   # 100 - v  (mean-reversion flip for RSI-scale oscillators)
-_ID  = "id"    # identity: use value as-is
+_NEG = "neg"  # negate the value: -v
+_RSI = "rsi"  # 100 - v  (mean-reversion flip for RSI-scale oscillators)
+_ID = "id"  # identity: use value as-is
 
 
 # ---------------------------------------------------------------------------
 # Indicator catalogue — daily timeframe, no session-structure indicators
 # Returns (label, cls, params, extractor) tuples.
 # ---------------------------------------------------------------------------
+
 
 def _catalogue() -> list[tuple[str, Any, Any, Any]]:
     """Return (label, cls, params, extractor) tuples.
@@ -129,67 +151,98 @@ def _catalogue() -> list[tuple[str, Any, Any, Any]]:
     """
     return [
         # Trend-following (un-flipped: positive = expect up)
-        ("EMA_cross_9_21",   None,              None,                                              None),
-        ("MACD_hist",        MACD,              MACD.Parameters(fast=12, slow=26, signal=9),       None),
-        ("Supertrend",       Supertrend,        Supertrend.Parameters(period=10, multiplier=3.0),  _ID),
-        ("ADX_14",           ADX,               ADX.Parameters(period=14),                         _ID),
-        ("Momentum_10",      Momentum,          Momentum.Parameters(period=10),                    _NEG),
-        ("ROC_10",           ROC,               ROC.Parameters(period=10),                         _NEG),
+        ("EMA_cross_9_21", None, None, None),
+        ("MACD_hist", MACD, MACD.Parameters(fast=12, slow=26, signal=9), None),
+        ("Supertrend", Supertrend, Supertrend.Parameters(period=10, multiplier=3.0), _ID),
+        ("ADX_14", ADX, ADX.Parameters(period=14), _ID),
+        ("Momentum_10", Momentum, Momentum.Parameters(period=10), _NEG),
+        ("ROC_10", ROC, ROC.Parameters(period=10), _NEG),
         # Mean-reversion oscillators (flipped)
-        ("RSI_14",           RSI,               RSI.Parameters(period=14),                         _RSI),
-        ("RSI_7",            RSI,               RSI.Parameters(period=7),                          _RSI),
-        ("RSI_21",           RSI,               RSI.Parameters(period=21),                         _RSI),
-        ("Stochastic_14",    Stochastic,        Stochastic.Parameters(k_period=14, d_period=3),    _RSI),
-        ("Williams_R_14",    WilliamsR,         WilliamsR.Parameters(period=14),                   _NEG),
-        ("CCI_20",           CCI,               CCI.Parameters(period=20),                         _NEG),
-        ("MFI_14",           MFI,               MFI.Parameters(period=14),                         _RSI),
-        ("CMF_20",           CMF,               CMF.Parameters(period=20),                         _ID),
-        ("ConnorsRSI",       ConnorsRSI,        ConnorsRSI.Parameters(),                           _RSI),
-        ("Fisher_10",        FisherTransform,   FisherTransform.Parameters(period=10),             _NEG),
-        ("UltimateOsc",      UltimateOscillator, UltimateOscillator.Parameters(period1=7, period2=14, period3=28), _RSI),
-        ("DPO_20",           DPO,               DPO.Parameters(period=20),                         _NEG),
-        ("TSI",              TSI,               TSI.Parameters(),                                  _NEG),
+        ("RSI_14", RSI, RSI.Parameters(period=14), _RSI),
+        ("RSI_7", RSI, RSI.Parameters(period=7), _RSI),
+        ("RSI_21", RSI, RSI.Parameters(period=21), _RSI),
+        ("Stochastic_14", Stochastic, Stochastic.Parameters(k_period=14, d_period=3), _RSI),
+        ("Williams_R_14", WilliamsR, WilliamsR.Parameters(period=14), _NEG),
+        ("CCI_20", CCI, CCI.Parameters(period=20), _NEG),
+        ("MFI_14", MFI, MFI.Parameters(period=14), _RSI),
+        ("CMF_20", CMF, CMF.Parameters(period=20), _ID),
+        ("ConnorsRSI", ConnorsRSI, ConnorsRSI.Parameters(), _RSI),
+        ("Fisher_10", FisherTransform, FisherTransform.Parameters(period=10), _NEG),
+        (
+            "UltimateOsc",
+            UltimateOscillator,
+            UltimateOscillator.Parameters(period1=7, period2=14, period3=28),
+            _RSI,
+        ),
+        ("DPO_20", DPO, DPO.Parameters(period=20), _NEG),
+        ("TSI", TSI, TSI.Parameters(), _NEG),
         # Band / channel indicators (flipped: near top = overbought)
-        ("Bollinger_%B",     BollingerBands,    BollingerBands.Parameters(period=20, k=2.0),       _NEG),
-        ("Keltner_%",        KeltnerChannels,   KeltnerChannels.Parameters(ema_period=20, atr_period=10, k=2.0), _ID),
-        ("Donchian_%",       DonchianChannels,  DonchianChannels.Parameters(period=20),            _ID),
+        ("Bollinger_%B", BollingerBands, BollingerBands.Parameters(period=20, k=2.0), _NEG),
+        (
+            "Keltner_%",
+            KeltnerChannels,
+            KeltnerChannels.Parameters(ema_period=20, atr_period=10, k=2.0),
+            _ID,
+        ),
+        ("Donchian_%", DonchianChannels, DonchianChannels.Parameters(period=20), _ID),
         # Trend continuation signal
-        ("PSAR",             ParabolicSAR,      ParabolicSAR.Parameters(),                         None),
+        ("PSAR", ParabolicSAR, ParabolicSAR.Parameters(), None),
         # Volume indicators
-        ("OBV_20",           OBV,               OBV.Parameters(period=20),                         _ID),
-        ("VWMA_20",          VWMA,              VWMA.Parameters(period=20),                        _ID),
-        ("RVOL_20",          RVOL,              RVOL.Parameters(period=20),                        _ID),
-        ("VROC_14",          VROC,              VROC.Parameters(period=14),                        _ID),
-        ("PVT_20",           PVT,               PVT.Parameters(period=20),                         _ID),
+        ("OBV_20", OBV, OBV.Parameters(period=20), _ID),
+        ("VWMA_20", VWMA, VWMA.Parameters(period=20), _ID),
+        ("RVOL_20", RVOL, RVOL.Parameters(period=20), _ID),
+        ("VROC_14", VROC, VROC.Parameters(period=14), _ID),
+        ("PVT_20", PVT, PVT.Parameters(period=20), _ID),
         # Volatility context
-        ("ATR_14",           ATR,               ATR.Parameters(period=14),                         _NEG),
-        ("ChaikinVol_10",    ChaikinVolatility, ChaikinVolatility.Parameters(ema_period=10, roc_period=10), _ID),
-        ("HistVol_20",       HistoricalVolatility, HistoricalVolatility.Parameters(period=20),     _NEG),
-        ("VolRatio",         VolatilityRatio,   VolatilityRatio.Parameters(),                      _ID),
-        ("SqueezeMom",       SqueezeMomentum,   SqueezeMomentum.Parameters(),                      _NEG),
-        ("NormATR_14",       NormalizedATR,     NormalizedATR.Parameters(period=14),               _NEG),
+        ("ATR_14", ATR, ATR.Parameters(period=14), _NEG),
+        (
+            "ChaikinVol_10",
+            ChaikinVolatility,
+            ChaikinVolatility.Parameters(ema_period=10, roc_period=10),
+            _ID,
+        ),
+        ("HistVol_20", HistoricalVolatility, HistoricalVolatility.Parameters(period=20), _NEG),
+        ("VolRatio", VolatilityRatio, VolatilityRatio.Parameters(), _ID),
+        ("SqueezeMom", SqueezeMomentum, SqueezeMomentum.Parameters(), _NEG),
+        ("NormATR_14", NormalizedATR, NormalizedATR.Parameters(period=14), _NEG),
         # Swing trading indicators
-        ("StochRSI_14",      StochasticRSI,     StochasticRSI.Parameters(rsi_period=14, stoch_period=14), _NEG),
-        ("RSIDivergence",    RSIDivergence,     RSIDivergence.Parameters(rsi_period=14, divergence_window=10), _NEG),
-        ("CoppockCurve",     CoppockCurve,      CoppockCurve.Parameters(),                         _ID),
-        ("ElderRay_13",      ElderRay,          ElderRay.Parameters(period=13),                    _NEG),
-        ("Aroon_25",         Aroon,             Aroon.Parameters(period=25),                       _NEG),
-        ("PricePercentile",  PricePercentile,   PricePercentile.Parameters(period=50),             _NEG),
-        ("DistFromMA_20",    DistanceFromMA,    DistanceFromMA.Parameters(period=20),              _NEG),
-        ("LinRegSlope_20",   LinearRegressionSlope, LinearRegressionSlope.Parameters(period=20),   _NEG),
-        ("MeanRevScore",     MeanReversionScore, MeanReversionScore.Parameters(),                   _NEG),
-        ("Chandelier_22",    ChandelierExit,    ChandelierExit.Parameters(period=22),              _NEG),
-        ("CandleBody_5",     CandleBodyRatio,   CandleBodyRatio.Parameters(period=5),              _NEG),
-        ("UpperShadow_5",    UpperShadowRatio,  UpperShadowRatio.Parameters(period=5),             _NEG),
-        ("InsideBar_10",     InsideBar,         InsideBar.Parameters(period=10),                   _ID),
-        ("WeeklyRSI_14",     WeeklyRSI,         WeeklyRSI.Parameters(rsi_period=14),               _RSI),
-        ("PriceVs52w",       PriceVs52wHigh,    PriceVs52wHigh.Parameters(period=252),             _NEG),
+        (
+            "StochRSI_14",
+            StochasticRSI,
+            StochasticRSI.Parameters(rsi_period=14, stoch_period=14),
+            _NEG,
+        ),
+        (
+            "RSIDivergence",
+            RSIDivergence,
+            RSIDivergence.Parameters(rsi_period=14, divergence_window=10),
+            _NEG,
+        ),
+        ("CoppockCurve", CoppockCurve, CoppockCurve.Parameters(), _ID),
+        ("ElderRay_13", ElderRay, ElderRay.Parameters(period=13), _NEG),
+        ("Aroon_25", Aroon, Aroon.Parameters(period=25), _NEG),
+        ("PricePercentile", PricePercentile, PricePercentile.Parameters(period=50), _NEG),
+        ("DistFromMA_20", DistanceFromMA, DistanceFromMA.Parameters(period=20), _NEG),
+        (
+            "LinRegSlope_20",
+            LinearRegressionSlope,
+            LinearRegressionSlope.Parameters(period=20),
+            _NEG,
+        ),
+        ("MeanRevScore", MeanReversionScore, MeanReversionScore.Parameters(), _NEG),
+        ("Chandelier_22", ChandelierExit, ChandelierExit.Parameters(period=22), _NEG),
+        ("CandleBody_5", CandleBodyRatio, CandleBodyRatio.Parameters(period=5), _NEG),
+        ("UpperShadow_5", UpperShadowRatio, UpperShadowRatio.Parameters(period=5), _NEG),
+        ("InsideBar_10", InsideBar, InsideBar.Parameters(period=10), _ID),
+        ("WeeklyRSI_14", WeeklyRSI, WeeklyRSI.Parameters(rsi_period=14), _RSI),
+        ("PriceVs52w", PriceVs52wHigh, PriceVs52wHigh.Parameters(period=252), _NEG),
     ]
 
 
 # ---------------------------------------------------------------------------
 # IC maths
 # ---------------------------------------------------------------------------
+
 
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 4:
@@ -220,6 +273,7 @@ def _quintile_spread(signals: np.ndarray, fwd: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # Per-indicator evaluation (new API)
 # ---------------------------------------------------------------------------
+
 
 async def _evaluate_indicator(
     label: str,
@@ -271,8 +325,12 @@ async def _evaluate_indicator(
                 slow = await slow_ind.compute(slow_params)
                 sig = (
                     (fast - slow)
-                    if (fast is not None and slow is not None
-                        and prev_fast is not None and prev_slow is not None)
+                    if (
+                        fast is not None
+                        and slow is not None
+                        and prev_fast is not None
+                        and prev_slow is not None
+                    )
                     else None
                 )
                 prev_fast, prev_slow = fast, slow
@@ -332,7 +390,8 @@ async def _evaluate_indicator(
 
     _nan = float("nan")
     empty: dict[str, Any] = {
-        "label": label, "n": len(signals),
+        "label": label,
+        "n": len(signals),
         **{f"IC_{h}": _nan for h in _HORIZONS},
         **{f"ICIR_{h}": _nan for h in _HORIZONS},
         **{f"Qspread_{h}": _nan for h in _HORIZONS},
@@ -359,7 +418,7 @@ async def _evaluate_indicator(
 
         rolling: list[float] = []
         for start in range(0, len(s) - _IC_WINDOW + 1, _IC_WINDOW // 2):
-            ic = _spearman(s[start: start + _IC_WINDOW], f[start: start + _IC_WINDOW])
+            ic = _spearman(s[start : start + _IC_WINDOW], f[start : start + _IC_WINDOW])
             if np.isfinite(ic):
                 rolling.append(ic)
         result[f"ICIR_{h}"] = _icir(np.array(rolling))
@@ -371,6 +430,7 @@ async def _evaluate_indicator(
 # ---------------------------------------------------------------------------
 # Multiprocessing worker — module-level so it's picklable
 # ---------------------------------------------------------------------------
+
 
 def _worker(args: tuple[str, list[dict]]) -> list[dict[str, Any]]:
     """Evaluate all catalogue indicators for one symbol in a subprocess."""
@@ -393,6 +453,7 @@ def _worker(args: tuple[str, list[dict]]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Main test
 # ---------------------------------------------------------------------------
+
 
 async def test_indicator_ic_daily(make_store) -> None:
     """
@@ -417,8 +478,7 @@ async def test_indicator_ic_daily(make_store) -> None:
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor() as executor:
         futures = [
-            loop.run_in_executor(executor, _worker, (sym, rows))
-            for sym, rows in symbol_rows
+            loop.run_in_executor(executor, _worker, (sym, rows)) for sym, rows in symbol_rows
         ]
         per_symbol = await asyncio.gather(*futures)
 
@@ -451,28 +511,31 @@ async def test_indicator_ic_daily(make_store) -> None:
     )
 
     # Print ranked table
-    print(f"\n{'='*100}")
-    print(f"  Daily IC Evaluation  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols")
-    print(f"{'='*100}")
-    h_ics   = "  ".join(f"IC_{h:>2}" for h in _HORIZONS)
+    print(f"\n{'=' * 100}")
+    print(
+        f"  Daily IC Evaluation  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols"
+    )
+    print(f"{'=' * 100}")
+    h_ics = "  ".join(f"IC_{h:>2}" for h in _HORIZONS)
     h_icirs = "  ".join(f"ICIR_{h:>2}" for h in _HORIZONS)
     print(f"  {'Indicator':<20}  {h_ics}    {h_icirs}    mean_ICIR")
-    print(f"  {'-'*95}")
+    print(f"  {'-' * 95}")
     for r in summary:
-        ics   = "  ".join(
-            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f'IC_{h}']) else "   nan"
-            for h in _HORIZONS
+        ics = "  ".join(
+            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f"IC_{h}"]) else "   nan" for h in _HORIZONS
         )
         icirs = "  ".join(
-            f"{r[f'ICIR_{h}']:+.3f}" if np.isfinite(r[f'ICIR_{h}']) else "    nan"
+            f"{r[f'ICIR_{h}']:+.3f}" if np.isfinite(r[f"ICIR_{h}"]) else "    nan"
             for h in _HORIZONS
         )
         micir = f"{r['mean_ICIR']:+.3f}" if np.isfinite(r["mean_ICIR"]) else "    nan"
         print(f"  {r['indicator']:<20}  {ics}    {icirs}    {micir}")
-    print(f"{'='*100}")
+    print(f"{'=' * 100}")
     print("\n  IC: |IC| > 0.05 useful, > 0.10 strong")
     print("  ICIR: |ICIR| > 0.5 consistent, > 1.0 excellent")
-    print("\n  Trend indicators (MACD, EMA cross, ADX, Supertrend, PSAR, Momentum, ROC): positive = long bias")
+    print(
+        "\n  Trend indicators (MACD, EMA cross, ADX, Supertrend, PSAR, Momentum, ROC): positive = long bias"
+    )
     print("  Oscillators (RSI, Stochastic, CCI, etc.): flipped — high value = oversold = long bias")
 
     # Write CSV
@@ -500,7 +563,11 @@ async def test_indicator_ic_daily(make_store) -> None:
             return "#ef9a9a"
         return "#fff"
 
-    h_cols = [f"IC_{h}" for h in _HORIZONS] + [f"ICIR_{h}" for h in _HORIZONS] + [f"Qspread_{h}" for h in _HORIZONS]
+    h_cols = (
+        [f"IC_{h}" for h in _HORIZONS]
+        + [f"ICIR_{h}" for h in _HORIZONS]
+        + [f"Qspread_{h}" for h in _HORIZONS]
+    )
     html_rows = []
     for r in summary:
         cells = [f"<td>{r['indicator']}</td>"]
@@ -538,7 +605,7 @@ async def test_indicator_ic_daily(make_store) -> None:
 <table>
 <thead><tr>{header}</tr></thead>
 <tbody>
-{''.join(html_rows)}
+{"".join(html_rows)}
 </tbody>
 </table>
 </body>

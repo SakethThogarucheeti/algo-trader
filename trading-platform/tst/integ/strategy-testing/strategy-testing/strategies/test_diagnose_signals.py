@@ -65,9 +65,9 @@ async def test_diagnose_signal_flow(pg_engine, tmp_path):
     )
     report: BacktestReport = await session.run()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Trades: {report.total_trades}  Final equity: {report.final_equity:,.0f}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # ------------------------------------------------------------------
     # Read audit_logs from the schema-isolated DB
@@ -75,9 +75,11 @@ async def test_diagnose_signal_flow(pg_engine, tmp_path):
     async with pg_engine.connect() as conn:
         await conn.execute(text(f'SET search_path TO "{_SCHEMA}"'))
 
-        rows = (await conn.execute(
-            text("SELECT module, level, message FROM audit_logs ORDER BY created_at")
-        )).fetchall()
+        rows = (
+            await conn.execute(
+                text("SELECT module, level, message FROM audit_logs ORDER BY created_at")
+            )
+        ).fetchall()
 
         print(f"\n--- audit_logs ({len(rows)} rows, rejections only) ---")
         reason_counts: dict[str, int] = defaultdict(int)
@@ -99,4 +101,4 @@ async def test_diagnose_signal_flow(pg_engine, tmp_path):
     async with pg_engine.begin() as conn:
         await conn.execute(text(f'DROP SCHEMA IF EXISTS "{_SCHEMA}" CASCADE'))
 
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")

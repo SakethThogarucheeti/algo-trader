@@ -54,10 +54,12 @@ class _NullRealBroker:
 
     def get_instruments(self):
         import polars as pl
+
         return pl.DataFrame()
 
     def get_ohlc(self, *a, **kw):
         import polars as pl
+
         return pl.DataFrame()
 
 
@@ -131,10 +133,12 @@ async def test_idempotency_duplicate_signal(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(
@@ -165,10 +169,12 @@ async def test_broker_rejection_marks_order_rejected(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(

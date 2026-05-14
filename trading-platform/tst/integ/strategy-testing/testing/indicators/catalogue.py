@@ -19,6 +19,7 @@ Session-aware indicators (VWAP, VWAPBands, SessionHighLowPct) require a clock
 to be passed at construction time — the loader cannot construct those instances
 itself. It returns the class and params; callers supply the clock.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,9 @@ from typing import Any
 
 from trading.indicators.base import Indicator, IndicatorParameters
 
-_CATALOGUE_PATH = Path(__file__).parents[2] / "strategy-testing" / "indicators" / "indicator_catalogue.json"
+_CATALOGUE_PATH = (
+    Path(__file__).parents[2] / "strategy-testing" / "indicators" / "indicator_catalogue.json"
+)
 
 # Aliases for session-aware indicators — callers must pass clock at construction
 _SESSION_ALIASES = frozenset({"vwap", "vwap_bands", "session_hl_pct"})
@@ -53,7 +56,9 @@ def load_catalogue(
     """
     import importlib
     import pkgutil
+
     import trading.indicators.library as _lib_pkg
+
     for _info in pkgutil.iter_modules(_lib_pkg.__path__):
         importlib.import_module(f"trading.indicators.library.{_info.name}")
 

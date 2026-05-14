@@ -47,7 +47,10 @@ def _candle(
         symbol=symbol,
         instrument_type=InstrumentType.EQUITY,
         interval=interval,
-        open=1500.0, high=1510.0, low=1490.0, close=1505.0,
+        open=1500.0,
+        high=1510.0,
+        low=1490.0,
+        close=1505.0,
         volume=10000,
         timestamp=ts or datetime(2024, 1, 2, 10, 0, tzinfo=UTC),
         tick_log_id=1,
@@ -110,10 +113,12 @@ async def test_pipeline_happy_path(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     risk_reg, exec_reg = _make_pipeline(session_factory, _OkBroker())
@@ -141,10 +146,12 @@ async def test_fault_injector_timeout_marks_rejected(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     faulty = FaultInjector(_OkBroker(), seed=0).with_timeout_rate(1.0)
@@ -173,10 +180,12 @@ async def test_fault_injector_partial_failures_no_deadlock(engine, session_facto
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     faulty = FaultInjector(_OkBroker(), seed=42).with_error_rate(0.5)
@@ -214,15 +223,18 @@ async def test_idempotency_duplicate_signal_end_to_end(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     _, exec_reg = _make_pipeline(session_factory, _CountingBroker())
 
     from trading.core.schemas import OrderType, ValidatedOrderEvent
+
     signal_id = uuid.uuid4()
     order_event = ValidatedOrderEvent(
         signal_id=signal_id,

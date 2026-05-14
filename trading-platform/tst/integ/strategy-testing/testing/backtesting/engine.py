@@ -30,7 +30,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRunConfig, AlgoRegistry, _AlgoInstance
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
 from trading.registry.candle import _SymbolConfig
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -77,8 +77,11 @@ class BacktestSession(TestingSession):
 
         logger.info(
             "BacktestSession[%s]: starting  algo=%s  start=%s  end=%s  equity=%.0f",
-            self._db_schema, config.algo.name,
-            config.start.date(), config.end.date(), config.initial_equity,
+            self._db_schema,
+            config.algo.name,
+            config.start.date(),
+            config.end.date(),
+            config.initial_equity,
         )
 
         partial_report: BacktestReport | None = None

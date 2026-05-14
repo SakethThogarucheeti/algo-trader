@@ -1,4 +1,5 @@
 """SyntheticDataBroker — deterministic OHLCV generator for tests."""
+
 from __future__ import annotations
 
 import hashlib
@@ -13,8 +14,8 @@ from trading.core.schemas import OrderType, Side
 # NSE session: 09:15 → 15:30, 25 bars at 15min cadence
 _SESSION_START_H = 9
 _SESSION_START_M = 15
-_SESSION_BARS    = 25
-_SESSION_MINUTES = _SESSION_BARS * 15    # 375 min
+_SESSION_BARS = 25
+_SESSION_MINUTES = _SESSION_BARS * 15  # 375 min
 
 
 class SyntheticDataBroker(Broker):
@@ -40,12 +41,12 @@ class SyntheticDataBroker(Broker):
         volatility: float = 0.3,
         seed: int = 42,
     ) -> None:
-        self._base       = base_price
-        self._drift      = drift_per_bar
-        self._amp        = amplitude
-        self._period     = period_bars
-        self._vol        = volatility
-        self._seed       = seed
+        self._base = base_price
+        self._drift = drift_per_bar
+        self._amp = amplitude
+        self._period = period_bars
+        self._vol = volatility
+        self._seed = seed
 
     # ── Broker interface ──────────────────────────────────────────────────────
 
@@ -65,16 +66,18 @@ class SyntheticDataBroker(Broker):
 
         rows: list[dict] = []
         prev = closes[0]
-        for ts, close in zip(timestamps, closes):
+        for ts, close in zip(timestamps, closes, strict=True):
             swing = abs(close - prev)
-            rows.append({
-                "date":   ts,
-                "open":   prev,
-                "high":   max(prev, close) + swing * 0.3,
-                "low":    min(prev, close) - swing * 0.3,
-                "close":  close,
-                "volume": 10_000 + int(close * 10) % 5000,
-            })
+            rows.append(
+                {
+                    "date": ts,
+                    "open": prev,
+                    "high": max(prev, close) + swing * 0.3,
+                    "low": min(prev, close) - swing * 0.3,
+                    "close": close,
+                    "volume": 10_000 + int(close * 10) % 5000,
+                }
+            )
             prev = close
 
         return pl.DataFrame(rows).with_columns(
@@ -144,7 +147,10 @@ def _session_timestamps(start: datetime, end: datetime, bar_min: int) -> list[da
 
     # Align to first session open on or after start
     cur = start.replace(
-        hour=_SESSION_START_H, minute=_SESSION_START_M, second=0, microsecond=0,
+        hour=_SESSION_START_H,
+        minute=_SESSION_START_M,
+        second=0,
+        microsecond=0,
         tzinfo=start.tzinfo or UTC,
     )
     if cur < start:
@@ -168,7 +174,10 @@ def _session_timestamps(start: datetime, end: datetime, bar_min: int) -> list[da
             while next_day.weekday() >= 5:
                 next_day += timedelta(days=1)
             cur = next_day.replace(
-                hour=_SESSION_START_H, minute=_SESSION_START_M, second=0, microsecond=0,
+                hour=_SESSION_START_H,
+                minute=_SESSION_START_M,
+                second=0,
+                microsecond=0,
             )
 
     return result
@@ -177,11 +186,11 @@ def _session_timestamps(start: datetime, end: datetime, bar_min: int) -> list[da
 def _empty_df() -> pl.DataFrame:
     return pl.DataFrame(
         schema={
-            "date":   pl.Datetime("us", "UTC"),
-            "open":   pl.Float64,
-            "high":   pl.Float64,
-            "low":    pl.Float64,
-            "close":  pl.Float64,
+            "date": pl.Datetime("us", "UTC"),
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
             "volume": pl.Int64,
         }
     )

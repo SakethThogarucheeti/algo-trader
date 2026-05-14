@@ -74,36 +74,60 @@ from trading.indicators.library.tsi import TSI
 from trading.indicators.library.ultimate_oscillator import UltimateOscillator
 from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
 from trading.indicators.library.volatility_ratio import VolatilityRatio
+from trading.indicators.library.vroc import VROC
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.library.vroc import VROC
 from trading.indicators.library.williams_r import WilliamsR
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
-_INTERVAL     = "15min"
-_HORIZONS     = [5, 15, 30, 50]
-_TRAIN_BARS   = 200
-_TEST_BARS    = 50
-_STEP_BARS    = 50
-_IC_WINDOW    = 20
+_INTERVAL = "15min"
+_HORIZONS = [5, 15, 30, 50]
+_TRAIN_BARS = 200
+_TEST_BARS = 50
+_STEP_BARS = 50
+_IC_WINDOW = 20
 
-_MONTH_END    = datetime(2026, 4, 30, tzinfo=UTC)
-_MONTH_START  = _MONTH_END - timedelta(days=400)
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_START = _MONTH_END - timedelta(days=400)
 
 # ---------------------------------------------------------------------------
 # Extractor sentinels — picklable strings, no lambdas crossing process boundary
 # ---------------------------------------------------------------------------
-_NEG = "neg"   # negate the value: -v
-_RSI = "rsi"   # 100 - v  (mean-reversion flip for RSI-scale oscillators)
-_ID  = "id"    # identity: use value as-is
+_NEG = "neg"  # negate the value: -v
+_RSI = "rsi"  # 100 - v  (mean-reversion flip for RSI-scale oscillators)
+_ID = "id"  # identity: use value as-is
 
 # Session-aware indicator classes that require a clock argument
 _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
@@ -115,6 +139,7 @@ _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
 # Includes existing strong performers + all 15 new swing indicators.
 # ---------------------------------------------------------------------------
 
+
 def _catalogue() -> list[tuple[str, Any, Any, Any]]:
     """Return (label, cls, params, extractor) tuples.
 
@@ -125,85 +150,131 @@ def _catalogue() -> list[tuple[str, Any, Any, Any]]:
     """
     return [
         # RSI — period sweep
-        ("RSI_7",           RSI,               RSI.Parameters(period=7),                          _RSI),
-        ("RSI_10",          RSI,               RSI.Parameters(period=10),                         _RSI),
-        ("RSI_14",          RSI,               RSI.Parameters(period=14),                         _RSI),
-        ("RSI_21",          RSI,               RSI.Parameters(period=21),                         _RSI),
+        ("RSI_7", RSI, RSI.Parameters(period=7), _RSI),
+        ("RSI_10", RSI, RSI.Parameters(period=10), _RSI),
+        ("RSI_14", RSI, RSI.Parameters(period=14), _RSI),
+        ("RSI_21", RSI, RSI.Parameters(period=21), _RSI),
         # Stochastic — k_period sweep
-        ("Stoch_9",         Stochastic,        Stochastic.Parameters(k_period=9, d_period=3),     _RSI),
-        ("Stoch_14",        Stochastic,        Stochastic.Parameters(k_period=14, d_period=3),    _RSI),
-        ("Stoch_21",        Stochastic,        Stochastic.Parameters(k_period=21, d_period=3),    _RSI),
+        ("Stoch_9", Stochastic, Stochastic.Parameters(k_period=9, d_period=3), _RSI),
+        ("Stoch_14", Stochastic, Stochastic.Parameters(k_period=14, d_period=3), _RSI),
+        ("Stoch_21", Stochastic, Stochastic.Parameters(k_period=21, d_period=3), _RSI),
         # VWAP deviation
-        ("VWAP_dev",        VWAP,              VWAP.Parameters(),                                 None),
+        ("VWAP_dev", VWAP, VWAP.Parameters(), None),
         # Bollinger %B — std multiplier sweep
-        ("BB_20_1.5",       BollingerBands,    BollingerBands.Parameters(period=20, k=1.5),       None),
-        ("BB_20_2.0",       BollingerBands,    BollingerBands.Parameters(period=20, k=2.0),       None),
-        ("BB_20_2.5",       BollingerBands,    BollingerBands.Parameters(period=20, k=2.5),       None),
+        ("BB_20_1.5", BollingerBands, BollingerBands.Parameters(period=20, k=1.5), None),
+        ("BB_20_2.0", BollingerBands, BollingerBands.Parameters(period=20, k=2.0), None),
+        ("BB_20_2.5", BollingerBands, BollingerBands.Parameters(period=20, k=2.5), None),
         # MFI — period sweep
-        ("MFI_10",          MFI,               MFI.Parameters(period=10),                         _RSI),
-        ("MFI_14",          MFI,               MFI.Parameters(period=14),                         _RSI),
-        ("MFI_21",          MFI,               MFI.Parameters(period=21),                         _RSI),
+        ("MFI_10", MFI, MFI.Parameters(period=10), _RSI),
+        ("MFI_14", MFI, MFI.Parameters(period=14), _RSI),
+        ("MFI_21", MFI, MFI.Parameters(period=21), _RSI),
         # Williams %R — period sweep
-        ("WR_10",           WilliamsR,         WilliamsR.Parameters(period=10),                   _NEG),
-        ("WR_14",           WilliamsR,         WilliamsR.Parameters(period=14),                   _NEG),
+        ("WR_10", WilliamsR, WilliamsR.Parameters(period=10), _NEG),
+        ("WR_14", WilliamsR, WilliamsR.Parameters(period=14), _NEG),
         # Donchian — period sweep
-        ("Donchian_10",     DonchianChannels,  DonchianChannels.Parameters(period=10),            None),
-        ("Donchian_20",     DonchianChannels,  DonchianChannels.Parameters(period=20),            None),
+        ("Donchian_10", DonchianChannels, DonchianChannels.Parameters(period=10), None),
+        ("Donchian_20", DonchianChannels, DonchianChannels.Parameters(period=20), None),
         # ConnorsRSI — period sweeps
-        ("CRSI_3_2_50",     ConnorsRSI,        ConnorsRSI.Parameters(rsi_period=3, streak_period=2, rank_period=50), _RSI),
-        ("CRSI_3_2_100",    ConnorsRSI,        ConnorsRSI.Parameters(rsi_period=3, streak_period=2, rank_period=100), _RSI),
+        (
+            "CRSI_3_2_50",
+            ConnorsRSI,
+            ConnorsRSI.Parameters(rsi_period=3, streak_period=2, rank_period=50),
+            _RSI,
+        ),
+        (
+            "CRSI_3_2_100",
+            ConnorsRSI,
+            ConnorsRSI.Parameters(rsi_period=3, streak_period=2, rank_period=100),
+            _RSI,
+        ),
         # Fisher Transform — period sweep
-        ("Fisher_5",        FisherTransform,   FisherTransform.Parameters(period=5),              _NEG),
-        ("Fisher_10",       FisherTransform,   FisherTransform.Parameters(period=10),             _NEG),
-        ("Fisher_20",       FisherTransform,   FisherTransform.Parameters(period=20),             _NEG),
+        ("Fisher_5", FisherTransform, FisherTransform.Parameters(period=5), _NEG),
+        ("Fisher_10", FisherTransform, FisherTransform.Parameters(period=10), _NEG),
+        ("Fisher_20", FisherTransform, FisherTransform.Parameters(period=20), _NEG),
         # Ultimate Oscillator
-        ("UltOsc_7_14_28",  UltimateOscillator, UltimateOscillator.Parameters(period1=7, period2=14, period3=28), _RSI),
-        ("UltOsc_4_8_14",   UltimateOscillator, UltimateOscillator.Parameters(period1=4, period2=8, period3=14),  _RSI),
+        (
+            "UltOsc_7_14_28",
+            UltimateOscillator,
+            UltimateOscillator.Parameters(period1=7, period2=14, period3=28),
+            _RSI,
+        ),
+        (
+            "UltOsc_4_8_14",
+            UltimateOscillator,
+            UltimateOscillator.Parameters(period1=4, period2=8, period3=14),
+            _RSI,
+        ),
         # TSI — fast/slow sweep
-        ("TSI_5_13",        TSI,               TSI.Parameters(fast=5, slow=13),                   _NEG),
-        ("TSI_13_25",       TSI,               TSI.Parameters(fast=13, slow=25),                  _NEG),
+        ("TSI_5_13", TSI, TSI.Parameters(fast=5, slow=13), _NEG),
+        ("TSI_13_25", TSI, TSI.Parameters(fast=13, slow=25), _NEG),
         # VWAP Bands — std sweep
-        ("VWAPBands_1.5",   VWAPBands,         VWAPBands.Parameters(num_std=1.5),                 _NEG),
-        ("VWAPBands_2.0",   VWAPBands,         VWAPBands.Parameters(num_std=2.0),                 _NEG),
-        ("VWAPBands_2.5",   VWAPBands,         VWAPBands.Parameters(num_std=2.5),                 _NEG),
+        ("VWAPBands_1.5", VWAPBands, VWAPBands.Parameters(num_std=1.5), _NEG),
+        ("VWAPBands_2.0", VWAPBands, VWAPBands.Parameters(num_std=2.0), _NEG),
+        ("VWAPBands_2.5", VWAPBands, VWAPBands.Parameters(num_std=2.5), _NEG),
         # Session HL %
-        ("SessionHLPct",    SessionHighLowPct, SessionHighLowPct.Parameters(),                    _NEG),
+        ("SessionHLPct", SessionHighLowPct, SessionHighLowPct.Parameters(), _NEG),
         # Opening Range Position — range_bars sweep
-        ("OR_2bar",         OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=2),  _NEG),
-        ("OR_4bar",         OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=4),  _NEG),
+        ("OR_2bar", OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=2), _NEG),
+        ("OR_4bar", OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=4), _NEG),
         # Volume
-        ("RVOL_10",         RVOL,              RVOL.Parameters(period=10),                        _ID),
-        ("RVOL_20",         RVOL,              RVOL.Parameters(period=20),                        _ID),
-        ("VROC_10",         VROC,              VROC.Parameters(period=10),                        _ID),
-        ("VROC_14",         VROC,              VROC.Parameters(period=14),                        _ID),
-        ("PVT_14",          PVT,               PVT.Parameters(period=14),                         _ID),
-        ("PVT_20",          PVT,               PVT.Parameters(period=20),                         _ID),
+        ("RVOL_10", RVOL, RVOL.Parameters(period=10), _ID),
+        ("RVOL_20", RVOL, RVOL.Parameters(period=20), _ID),
+        ("VROC_10", VROC, VROC.Parameters(period=10), _ID),
+        ("VROC_14", VROC, VROC.Parameters(period=14), _ID),
+        ("PVT_14", PVT, PVT.Parameters(period=14), _ID),
+        ("PVT_20", PVT, PVT.Parameters(period=20), _ID),
         # Volatility context
-        ("VolRatio_14_50",  VolatilityRatio,   VolatilityRatio.Parameters(atr_period=14, smooth_period=50), _ID),
-        ("VolRatio_7_20",   VolatilityRatio,   VolatilityRatio.Parameters(atr_period=7, smooth_period=20),  _ID),
-        ("SqueezeMom_20",   SqueezeMomentum,   SqueezeMomentum.Parameters(period=20),             _NEG),
-        ("NormATR_14",      NormalizedATR,     NormalizedATR.Parameters(period=14),               _NEG),
+        (
+            "VolRatio_14_50",
+            VolatilityRatio,
+            VolatilityRatio.Parameters(atr_period=14, smooth_period=50),
+            _ID,
+        ),
+        (
+            "VolRatio_7_20",
+            VolatilityRatio,
+            VolatilityRatio.Parameters(atr_period=7, smooth_period=20),
+            _ID,
+        ),
+        ("SqueezeMom_20", SqueezeMomentum, SqueezeMomentum.Parameters(period=20), _NEG),
+        ("NormATR_14", NormalizedATR, NormalizedATR.Parameters(period=14), _NEG),
         # Swing indicators
-        ("StochRSI_14",     StochasticRSI,     StochasticRSI.Parameters(rsi_period=14, stoch_period=14), _NEG),
-        ("RSIDivergence",   RSIDivergence,     RSIDivergence.Parameters(rsi_period=14, divergence_window=10), _NEG),
-        ("CoppockCurve",    CoppockCurve,      CoppockCurve.Parameters(),                         _ID),
-        ("ElderRay_13",     ElderRay,          ElderRay.Parameters(period=13),                    _NEG),
-        ("Aroon_25",        Aroon,             Aroon.Parameters(period=25),                       _NEG),
-        ("PricePercentile", PricePercentile,   PricePercentile.Parameters(period=50),             _NEG),
-        ("DistFromMA_20",   DistanceFromMA,    DistanceFromMA.Parameters(period=20),              _NEG),
-        ("LinRegSlope_20",  LinearRegressionSlope, LinearRegressionSlope.Parameters(period=20),   _NEG),
-        ("MeanRevScore",    MeanReversionScore, MeanReversionScore.Parameters(),                   _NEG),
-        ("Chandelier_22",   ChandelierExit,    ChandelierExit.Parameters(period=22),              _NEG),
-        ("CandleBody_5",    CandleBodyRatio,   CandleBodyRatio.Parameters(period=5),              _NEG),
-        ("UpperShadow_5",   UpperShadowRatio,  UpperShadowRatio.Parameters(period=5),             _NEG),
-        ("InsideBar_10",    InsideBar,         InsideBar.Parameters(period=10),                   _ID),
-        ("PriceVs52w",      PriceVs52wHigh,    PriceVs52wHigh.Parameters(period=252),             _NEG),
+        (
+            "StochRSI_14",
+            StochasticRSI,
+            StochasticRSI.Parameters(rsi_period=14, stoch_period=14),
+            _NEG,
+        ),
+        (
+            "RSIDivergence",
+            RSIDivergence,
+            RSIDivergence.Parameters(rsi_period=14, divergence_window=10),
+            _NEG,
+        ),
+        ("CoppockCurve", CoppockCurve, CoppockCurve.Parameters(), _ID),
+        ("ElderRay_13", ElderRay, ElderRay.Parameters(period=13), _NEG),
+        ("Aroon_25", Aroon, Aroon.Parameters(period=25), _NEG),
+        ("PricePercentile", PricePercentile, PricePercentile.Parameters(period=50), _NEG),
+        ("DistFromMA_20", DistanceFromMA, DistanceFromMA.Parameters(period=20), _NEG),
+        (
+            "LinRegSlope_20",
+            LinearRegressionSlope,
+            LinearRegressionSlope.Parameters(period=20),
+            _NEG,
+        ),
+        ("MeanRevScore", MeanReversionScore, MeanReversionScore.Parameters(), _NEG),
+        ("Chandelier_22", ChandelierExit, ChandelierExit.Parameters(period=22), _NEG),
+        ("CandleBody_5", CandleBodyRatio, CandleBodyRatio.Parameters(period=5), _NEG),
+        ("UpperShadow_5", UpperShadowRatio, UpperShadowRatio.Parameters(period=5), _NEG),
+        ("InsideBar_10", InsideBar, InsideBar.Parameters(period=10), _ID),
+        ("PriceVs52w", PriceVs52wHigh, PriceVs52wHigh.Parameters(period=252), _NEG),
     ]
 
 
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
+
 
 def _ic(signals: np.ndarray, fwd: np.ndarray) -> float:
     if len(signals) < 4:
@@ -246,6 +317,7 @@ def _qspread(signals: np.ndarray, fwd: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # Evaluate one indicator on one (train, test) window for one symbol
 # ---------------------------------------------------------------------------
+
 
 async def _evaluate_window(
     label: str,
@@ -290,11 +362,14 @@ async def _evaluate_window(
     if len(signals) < 10:
         return {"IC": nan, "ICIR": nan, "Qspread": nan}
 
-    fwd = np.array([
-        (test_closes[i + horizon] - test_closes[i]) / test_closes[i]
-        if i + horizon < len(test_closes) else np.nan
-        for i in bar_indices
-    ])
+    fwd = np.array(
+        [
+            (test_closes[i + horizon] - test_closes[i]) / test_closes[i]
+            if i + horizon < len(test_closes)
+            else np.nan
+            for i in bar_indices
+        ]
+    )
     mask = ~np.isnan(fwd)
     sig_arr, fwd_arr = np.array(signals)[mask], fwd[mask]
 
@@ -302,8 +377,8 @@ async def _evaluate_window(
         return {"IC": nan, "ICIR": nan, "Qspread": nan}
 
     return {
-        "IC":      _ic(sig_arr, fwd_arr),
-        "ICIR":    _icir_from_series(sig_arr, fwd_arr),
+        "IC": _ic(sig_arr, fwd_arr),
+        "ICIR": _icir_from_series(sig_arr, fwd_arr),
         "Qspread": _qspread(sig_arr, fwd_arr),
     }
 
@@ -348,6 +423,7 @@ async def _extract(ind: Any, label: str, params: Any, extractor: Any, row: dict)
 # Indicator instances are created INSIDE this function (not imported from main).
 # ---------------------------------------------------------------------------
 
+
 def _worker_window(
     args: tuple[str, list[dict], list[dict]],
 ) -> list[tuple[str, int, float]]:
@@ -361,8 +437,15 @@ def _worker_window(
             for h in _HORIZONS:
                 clock = SimulatedClock()
                 m = await _evaluate_window(
-                    label, cls, params, extractor,
-                    train_rows, test_rows, symbol, clock, h,
+                    label,
+                    cls,
+                    params,
+                    extractor,
+                    train_rows,
+                    test_rows,
+                    symbol,
+                    clock,
+                    h,
                 )
                 if np.isfinite(m["IC"]):
                     out.append((label, h, m["IC"]))
@@ -375,12 +458,13 @@ def _worker_window(
 # Main test
 # ---------------------------------------------------------------------------
 
+
 async def test_indicator_wf_ic_evaluation(data_loader) -> None:
     """
     Walk-forward IC/ICIR sweep across all symbols, windows, and hyperparam variants.
     Each (symbol, window) pair is evaluated in a separate process.
     """
-    far_past   = datetime(2000, 1, 1, tzinfo=UTC)
+    far_past = datetime(2000, 1, 1, tzinfo=UTC)
     far_future = datetime(2100, 1, 1, tzinfo=UTC)
 
     symbol_rows: dict[str, list[dict]] = {}
@@ -408,15 +492,19 @@ async def test_indicator_wf_ic_evaluation(data_loader) -> None:
             f"Need {_TRAIN_BARS + _TEST_BARS}, got {len(first_rows)}."
         )
 
-    print(f"\n  {len(windows)} windows  |  train={_TRAIN_BARS}  test={_TEST_BARS}  step={_STEP_BARS}")
-    print(f"  {len(symbol_rows)} symbols  |  {sum(len(v) for v in symbol_rows.values())} total bars\n")
+    print(
+        f"\n  {len(windows)} windows  |  train={_TRAIN_BARS}  test={_TEST_BARS}  step={_STEP_BARS}"
+    )
+    print(
+        f"  {len(symbol_rows)} symbols  |  {sum(len(v) for v in symbol_rows.values())} total bars\n"
+    )
 
     # Build all (symbol, train_rows, test_rows) tasks across all windows upfront
     all_tasks: list[tuple[str, list[dict], list[dict], int]] = []  # (sym, train, test, w_idx)
     for w_idx, (train_start, train_end, test_start, test_end) in enumerate(windows):
         for symbol, all_rows in symbol_rows.items():
             train_rows = [r for r in all_rows if train_start <= r["ts"] <= train_end]
-            test_rows  = [r for r in all_rows if test_start  <= r["ts"] <= test_end]
+            test_rows = [r for r in all_rows if test_start <= r["ts"] <= test_end]
             if len(train_rows) < _TRAIN_BARS // 2 or len(test_rows) < 10:
                 continue
             all_tasks.append((symbol, train_rows, test_rows, w_idx))
@@ -435,7 +523,7 @@ async def test_indicator_wf_ic_evaluation(data_loader) -> None:
         w_indices = [w_idx for _, _, _, w_idx in all_tasks]
         completed = await asyncio.gather(*futures)
 
-    for w_idx, triples in zip(w_indices, completed):
+    for w_idx, triples in zip(w_indices, completed, strict=True):
         print(f"  Window {w_idx + 1} done ({len(triples)} IC values)")
         for label, h, ic in triples:
             results[label][h].append(ic)
@@ -478,24 +566,27 @@ async def test_indicator_wf_ic_evaluation(data_loader) -> None:
         f"train={_TRAIN_BARS}  test={_TEST_BARS}  step={_STEP_BARS}  |  {_INTERVAL}"
     )
     print(sep)
-    h_ic   = "  ".join(f"IC_{h:>2}" for h in _HORIZONS)
+    h_ic = "  ".join(f"IC_{h:>2}" for h in _HORIZONS)
     h_icir = "  ".join(f"ICIR_{h}" for h in _HORIZONS)
     print(f"  {'Indicator':<16}  {h_ic}    {h_icir}    mean_ICIR  stability")
-    print(f"  {'-'*100}")
+    print(f"  {'-' * 100}")
     for r in summary:
-        ics   = "  ".join(
-            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f'IC_{h}']) else "   nan" for h in _HORIZONS
+        ics = "  ".join(
+            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f"IC_{h}"]) else "   nan" for h in _HORIZONS
         )
         icirs = "  ".join(
-            f"{r[f'ICIR_{h}']:+.3f}" if np.isfinite(r[f'ICIR_{h}']) else "    nan" for h in _HORIZONS
+            f"{r[f'ICIR_{h}']:+.3f}" if np.isfinite(r[f"ICIR_{h}"]) else "    nan"
+            for h in _HORIZONS
         )
         micir = f"{r['mean_ICIR']:+.3f}" if np.isfinite(r["mean_ICIR"]) else "    nan"
-        stab  = f"{r['stability']:.2f}" if np.isfinite(r["stability"]) else "  nan"
+        stab = f"{r['stability']:.2f}" if np.isfinite(r["stability"]) else "  nan"
         print(f"  {r['indicator']:<16}  {ics}    {icirs}    {micir}      {stab}")
     print(sep)
     print("\n  IC: |IC| > 0.05 useful, > 0.10 strong")
     print("  ICIR: |ICIR| > 0.5 consistent, > 1.0 excellent")
-    print("  stability: fraction of windows where IC sign matches overall direction (1.0 = always same sign)")
+    print(
+        "  stability: fraction of windows where IC sign matches overall direction (1.0 = always same sign)"
+    )
 
     csv_path = Path(__file__).parent / "indicator_wf_ic_results.csv"
     if summary:

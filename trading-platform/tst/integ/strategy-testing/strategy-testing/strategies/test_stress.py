@@ -85,9 +85,9 @@ def test_volatility_spike_increases_bar_range():
     df = volatility_spike(n_bars=100, spike_bar=50, spike_multiplier=5.0, seed=0)
     spike_ranges = (df["high"] - df["low"]).slice(48, 5)  # bars 48-52
     normal_ranges = (df["high"] - df["low"]).slice(0, 10)  # bars 0-9
-    assert (
-        spike_ranges.mean() > normal_ranges.mean() * 1.5
-    ), "Bars near spike should have larger H-L range"
+    assert spike_ranges.mean() > normal_ranges.mean() * 1.5, (
+        "Bars near spike should have larger H-L range"
+    )
 
 
 # ---------------------------------------------------------------------------

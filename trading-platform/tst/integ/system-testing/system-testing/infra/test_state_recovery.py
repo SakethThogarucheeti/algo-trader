@@ -47,10 +47,12 @@ class _CountingBroker:
 
     def get_instruments(self):
         import polars as pl
+
         return pl.DataFrame()
 
     def get_ohlc(self, *a, **kw):
         import polars as pl
+
         return pl.DataFrame()
 
 
@@ -96,10 +98,12 @@ async def test_order_persisted_in_db(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(

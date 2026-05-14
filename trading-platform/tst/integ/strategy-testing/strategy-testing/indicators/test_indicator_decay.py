@@ -25,78 +25,52 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
-from trading.indicators.library.adx import ADX
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.bollinger import BollingerBands
-from trading.indicators.library.cci import CCI
-from trading.indicators.library.chaikin_volatility import ChaikinVolatility
-from trading.indicators.library.cmf import CMF
-from trading.indicators.library.connors_rsi import ConnorsRSI
-from trading.indicators.library.donchian import DonchianChannels
-from trading.indicators.library.dpo import DPO
 from trading.indicators.library.ema import EMA
-from trading.indicators.library.fisher_transform import FisherTransform
-from trading.indicators.library.gap import GapSize
-from trading.indicators.library.historical_volatility import HistoricalVolatility
-from trading.indicators.library.keltner import KeltnerChannels
-from trading.indicators.library.macd import MACD
-from trading.indicators.library.mfi import MFI
-from trading.indicators.library.momentum import Momentum
-from trading.indicators.library.normalized_atr import NormalizedATR
-from trading.indicators.library.obv import OBV
-from trading.indicators.library.opening_range import OpeningRangePosition
-from trading.indicators.library.parabolic_sar import ParabolicSAR
-from trading.indicators.library.pvt import PVT
-from trading.indicators.library.roc import ROC
-from trading.indicators.library.rsi import RSI
-from trading.indicators.library.rvol import RVOL
 from trading.indicators.library.session_high_low_pct import SessionHighLowPct
-from trading.indicators.library.sma import SMA
-from trading.indicators.library.squeeze_momentum import SqueezeMomentum
-from trading.indicators.library.stochastic import Stochastic
-from trading.indicators.library.supertrend import Supertrend
-from trading.indicators.library.tsi import TSI
-from trading.indicators.library.ultimate_oscillator import UltimateOscillator
-from trading.indicators.library.volatility_ratio import VolatilityRatio
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.library.vroc import VROC
-from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
-from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
-_INTERVAL  = "15min"
-_WARMUP    = 100
-_HORIZONS  = [1, 2, 3, 5, 8, 13, 21, 34, 50]  # Fibonacci
+_INTERVAL = "15min"
+_WARMUP = 100
+_HORIZONS = [1, 2, 3, 5, 8, 13, 21, 34, 50]  # Fibonacci
 
-_MONTH_END   = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
 _MONTH_START = _MONTH_END - timedelta(days=400)
 
 _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
@@ -105,6 +79,7 @@ _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
+
 
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 4:
@@ -154,6 +129,7 @@ def _halflife(horizons: list[int], ics: list[float]) -> float:
 # Per-indicator evaluation (same pattern as test_indicator_ic.py)
 # ---------------------------------------------------------------------------
 
+
 async def _evaluate_indicator_decay(
     label: str,
     cls: Any,
@@ -170,7 +146,6 @@ async def _evaluate_indicator_decay(
     store = PolarsStore(maxlen=500)
     closes = np.array([r["close"] for r in rows], dtype=float)
 
-    max_h = max(_HORIZONS)
     fwd_returns: dict[int, np.ndarray] = {}
     for h in _HORIZONS:
         ret = np.full(len(closes), np.nan)
@@ -210,8 +185,12 @@ async def _evaluate_indicator_decay(
                 slow = await slow_ind.compute(slow_params)
                 sig = (
                     (fast - slow)
-                    if (fast is not None and slow is not None
-                        and prev_fast is not None and prev_slow is not None)
+                    if (
+                        fast is not None
+                        and slow is not None
+                        and prev_fast is not None
+                        and prev_slow is not None
+                    )
                     else None
                 )
                 prev_fast, prev_slow = fast, slow
@@ -276,7 +255,8 @@ async def _evaluate_indicator_decay(
 
     _nan = float("nan")
     empty: dict[str, Any] = {
-        "label": label, "n": len(signals),
+        "label": label,
+        "n": len(signals),
         **{f"IC_{h}": _nan for h in _HORIZONS},
         "peak_horizon": _nan,
         "IC_peak": _nan,
@@ -303,10 +283,7 @@ async def _evaluate_indicator_decay(
         ic_values.append(result[f"IC_{h}"])
 
     # Peak horizon and IC
-    finite_pairs = [
-        (h, ic) for h, ic in zip(_HORIZONS, ic_values)
-        if np.isfinite(ic)
-    ]
+    finite_pairs = [(h, ic) for h, ic in zip(_HORIZONS, ic_values, strict=True) if np.isfinite(ic)]
     if finite_pairs:
         peak_h, peak_ic = max(finite_pairs, key=lambda x: abs(x[1]))
         result["peak_horizon"] = float(peak_h)
@@ -323,6 +300,7 @@ async def _evaluate_indicator_decay(
 # Worker — module-level for pickling
 # ---------------------------------------------------------------------------
 
+
 def _worker_decay(args: tuple[str, list[dict]]) -> list[dict[str, Any]]:
     """
     Evaluate IC decay for all catalogue indicators for one symbol.
@@ -338,7 +316,9 @@ def _worker_decay(args: tuple[str, list[dict]]) -> list[dict[str, Any]]:
         results = []
         for label, cls, params, extractor in catalogue:
             clock = SimulatedClock()
-            res = await _evaluate_indicator_decay(label, cls, params, extractor, rows, symbol, clock)
+            res = await _evaluate_indicator_decay(
+                label, cls, params, extractor, rows, symbol, clock
+            )
             res["symbol"] = symbol
             results.append(res)
         return results
@@ -349,6 +329,7 @@ def _worker_decay(args: tuple[str, list[dict]]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Main test
 # ---------------------------------------------------------------------------
+
 
 async def test_indicator_ic_decay(make_store) -> None:
     """
@@ -369,8 +350,7 @@ async def test_indicator_ic_decay(make_store) -> None:
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor() as executor:
         futures = [
-            loop.run_in_executor(executor, _worker_decay, (sym, rows))
-            for sym, rows in symbol_rows
+            loop.run_in_executor(executor, _worker_decay, (sym, rows)) for sym, rows in symbol_rows
         ]
         per_symbol: list[list[dict[str, Any]]] = await asyncio.gather(*futures)
 
@@ -402,10 +382,7 @@ async def test_indicator_ic_decay(make_store) -> None:
             ic_values.append(ic)
 
         # Recompute peak and half-life from aggregated ICs
-        finite_pairs = [
-            (h, ic) for h, ic in zip(_HORIZONS, ic_values)
-            if np.isfinite(ic)
-        ]
+        finite_pairs = [(h, ic) for h, ic in zip(_HORIZONS, ic_values, strict=True) if np.isfinite(ic)]
         if finite_pairs:
             peak_h, peak_ic = max(finite_pairs, key=lambda x: abs(x[1]))
             row["peak_horizon"] = float(peak_h)
@@ -424,25 +401,28 @@ async def test_indicator_ic_decay(make_store) -> None:
     )
 
     # Print table
-    print(f"\n{'='*115}")
-    print(f"  Indicator IC Decay  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols")
+    print(f"\n{'=' * 115}")
+    print(
+        f"  Indicator IC Decay  |  {_MONTH_START.date()} to {_MONTH_END.date()}  |  {_INTERVAL}  |  {len(_SYMBOLS)} symbols"
+    )
     print(f"  Horizons (bars): {_HORIZONS}")
-    print(f"{'='*115}")
+    print(f"{'=' * 115}")
     h_header = "  ".join(f"IC_{h:>2}" for h in _HORIZONS)
     print(f"  {'Indicator':<22}  {h_header}  {'Peak_H':>7}  {'IC_peak':>8}  {'Half-life':>9}")
-    print(f"  {'-'*110}")
+    print(f"  {'-' * 110}")
     for r in summary:
         ic_str = "  ".join(
-            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f"IC_{h}"]) else "   nan"
-            for h in _HORIZONS
+            f"{r[f'IC_{h}']:+.3f}" if np.isfinite(r[f"IC_{h}"]) else "   nan" for h in _HORIZONS
         )
         ph = f"{int(r['peak_horizon'])}" if np.isfinite(r["peak_horizon"]) else "nan"
         icp = f"{r['IC_peak']:+.4f}" if np.isfinite(r["IC_peak"]) else "     nan"
         hl = f"{r['half_life']:.1f}" if np.isfinite(r["half_life"]) else "      nan"
         print(f"  {r['indicator']:<22}  {ic_str}  {ph:>7}  {icp}  {hl:>9}")
-    print(f"{'='*115}")
+    print(f"{'=' * 115}")
     print("\n  IC: |IC| > 0.05 useful, > 0.10 strong")
-    print("  Half-life: bars until |IC| drops to half its peak value (nan = doesn't decay within 50 bars)")
+    print(
+        "  Half-life: bars until |IC| drops to half its peak value (nan = doesn't decay within 50 bars)"
+    )
 
     # Write CSV
     reports_dir = Path(__file__).parent / "reports"
@@ -450,7 +430,11 @@ async def test_indicator_ic_decay(make_store) -> None:
     csv_path = reports_dir / "indicator_decay_results.csv"
 
     if summary:
-        fieldnames = ["indicator"] + [f"IC_{h}" for h in _HORIZONS] + ["peak_horizon", "IC_peak", "half_life"]
+        fieldnames = (
+            ["indicator"]
+            + [f"IC_{h}" for h in _HORIZONS]
+            + ["peak_horizon", "IC_peak", "half_life"]
+        )
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
@@ -530,7 +514,7 @@ async def test_indicator_ic_decay(make_store) -> None:
 <table>
 <thead><tr>{th}</tr></thead>
 <tbody>
-{''.join(html_rows)}
+{"".join(html_rows)}
 </tbody>
 </table>
 </body>

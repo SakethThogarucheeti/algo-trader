@@ -19,8 +19,7 @@ def _validate_dataframe(df: pl.DataFrame, source: str) -> None:
     missing = _REQUIRED_COLUMNS - set(df.columns)
     if missing:
         raise ValueError(
-            f"DataLoader [{source}]: missing required columns: {sorted(missing)}. "
-            f"Got: {df.columns}"
+            f"DataLoader [{source}]: missing required columns: {sorted(missing)}. Got: {df.columns}"
         )
     for col in ("open", "high", "low", "close"):
         if df[col].dtype not in (pl.Float32, pl.Float64):

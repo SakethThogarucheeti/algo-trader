@@ -56,9 +56,9 @@ def test_compute_windows_no_overlap_in_test_periods():
     for i in range(len(windows) - 1):
         _, _, test_start_i, test_end_i = windows[i]
         _, _, test_start_j, test_end_j = windows[i + 1]
-        assert (
-            test_end_i < test_start_j
-        ), f"Test window {i} and {i+1} overlap: {test_end_i} vs {test_start_j}"
+        assert test_end_i < test_start_j, (
+            f"Test window {i} and {i + 1} overlap: {test_end_i} vs {test_start_j}"
+        )
 
 
 def test_compute_windows_empty_when_not_enough_bars():
@@ -76,5 +76,5 @@ def test_walk_forward_session_ids_unique():
     windows = _compute_windows(df, train_bars=100, test_bars=50, step_bars=50)
     # session IDs would be "{parent_id}_w{i}" — just check the pattern is stable
     parent_id = "test_parent"
-    ids = [f"{parent_id}_w{i+1}" for i in range(len(windows))]
+    ids = [f"{parent_id}_w{i + 1}" for i in range(len(windows))]
     assert len(ids) == len(set(ids)), "Window session IDs must be unique"

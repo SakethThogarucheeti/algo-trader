@@ -51,10 +51,12 @@ async def test_broker_timeout_produces_rejected_order(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(
@@ -90,10 +92,12 @@ async def test_consecutive_broker_failures_no_deadlock(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(
@@ -120,10 +124,12 @@ async def test_broker_api_error_leaves_db_consistent(engine, session_factory):
 
         def get_instruments(self):
             import polars as pl
+
             return pl.DataFrame()
 
         def get_ohlc(self, *a, **kw):
             import polars as pl
+
             return pl.DataFrame()
 
     exec_reg = ExecRegistry(

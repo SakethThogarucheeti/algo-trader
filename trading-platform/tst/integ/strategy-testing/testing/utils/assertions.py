@@ -68,5 +68,5 @@ def assert_pnl_positive(report: BacktestReport) -> None:
 def assert_total_trades_above(report: BacktestReport, min_trades: int) -> None:
     """Assert that the backtest generated at least *min_trades* completed trades."""
     assert report.total_trades >= min_trades, (
-        f"Too few trades: {report.total_trades} < {min_trades} " f"(session_id={report.session_id})"
+        f"Too few trades: {report.total_trades} < {min_trades} (session_id={report.session_id})"
     )

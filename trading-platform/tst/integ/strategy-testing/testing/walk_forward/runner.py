@@ -95,7 +95,7 @@ class WalkForwardRunner(TestingSession):
                     end=test_end,
                     loader=config.loader,
                     initial_equity=config.initial_equity,
-                    session_id=f"{session_id}_w{w_idx+1}",
+                    session_id=f"{session_id}_w{w_idx + 1}",
                 )
 
                 bt_session = BacktestSession(

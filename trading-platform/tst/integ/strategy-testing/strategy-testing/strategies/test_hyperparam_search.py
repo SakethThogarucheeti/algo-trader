@@ -74,10 +74,18 @@ def _start() -> datetime:
 
 _RESULTS_CSV = Path(__file__).parent / "grid_search_results.csv"
 _CSV_FIELDS = [
-    "fast", "slow", "atr_multiplier",
-    "sharpe", "cagr", "max_dd", "calmar",
-    "win_rate", "profit_factor",
-    "total_trades", "pnl", "final_equity",
+    "fast",
+    "slow",
+    "atr_multiplier",
+    "sharpe",
+    "cagr",
+    "max_dd",
+    "calmar",
+    "win_rate",
+    "profit_factor",
+    "total_trades",
+    "pnl",
+    "final_equity",
 ]
 
 
@@ -164,12 +172,12 @@ def _print_table(results: list[GridResult]) -> None:
         f"{'Params':<28} {'Sharpe':>8} {'PnL':>8} {'CAGR':>7} {'MaxDD':>7}"
         f" {'Calmar':>7} {'WinR':>6} {'PF':>6} {'Trades':>7}"
     )
-    print(f"\n{'='*W}")
+    print(f"\n{'=' * W}")
     print("  EMA Crossover Hyperparameter Grid Search")
     print(f"  Symbols : {', '.join(_SYMBOLS)}")
     print(f"  Period  : {_start().date()} to {_END.date()}")
     print(f"  Interval: {_INTERVAL}   Equity: {_EQUITY:,.0f}")
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     print(header)
     print("-" * W)
     for r in ranked:
@@ -178,14 +186,14 @@ def _print_table(results: list[GridResult]) -> None:
             f" {r.max_dd:>7.1%} {r.calmar:>7.2f} {r.win_rate:>6.0%}"
             f" {r.profit_factor:>6.2f} {r.total_trades:>7}"
         )
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     best = ranked[0]
     print(
         f"  Best by Sharpe: {best.label()}"
         f"  (Sharpe={best.sharpe:.3f}, PnL={best.pnl:+.0f},"
         f" WinR={best.win_rate:.0%}, PF={best.profit_factor:.2f})"
     )
-    print(f"{'='*W}\n")
+    print(f"{'=' * W}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -202,11 +210,7 @@ async def test_ema_grid_search(pg_engine, tmp_path):
     Results are appended to grid_search_results.csv as each combo finishes.
     """
     all_combos = itertools.product(_FAST_PERIODS, _SLOW_PERIODS, _ATR_MULTIPLIERS)
-    combos = [
-        (fast, slow, atr_mult)
-        for fast, slow, atr_mult in all_combos
-        if fast < slow
-    ]
+    combos = [(fast, slow, atr_mult) for fast, slow, atr_mult in all_combos if fast < slow]
 
     _sem = asyncio.Semaphore(1)
     _csv_lock = asyncio.Lock()
@@ -260,6 +264,7 @@ async def test_ema_grid_search(pg_engine, tmp_path):
     _print_table(list(results))
 
     from sqlalchemy import text
+
     async with pg_engine.begin() as conn:
         for fast, slow, atr_mult in combos:
             schema = f"bt_{fast}_{slow}_{str(atr_mult).replace('.', '_')}"

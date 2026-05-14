@@ -25,77 +25,51 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
-from trading.indicators.library.adx import ADX
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.bollinger import BollingerBands
-from trading.indicators.library.cci import CCI
-from trading.indicators.library.chaikin_volatility import ChaikinVolatility
-from trading.indicators.library.cmf import CMF
-from trading.indicators.library.connors_rsi import ConnorsRSI
-from trading.indicators.library.donchian import DonchianChannels
-from trading.indicators.library.dpo import DPO
 from trading.indicators.library.ema import EMA
-from trading.indicators.library.fisher_transform import FisherTransform
-from trading.indicators.library.gap import GapSize
-from trading.indicators.library.historical_volatility import HistoricalVolatility
-from trading.indicators.library.keltner import KeltnerChannels
-from trading.indicators.library.macd import MACD
-from trading.indicators.library.mfi import MFI
-from trading.indicators.library.momentum import Momentum
-from trading.indicators.library.normalized_atr import NormalizedATR
-from trading.indicators.library.obv import OBV
-from trading.indicators.library.opening_range import OpeningRangePosition
-from trading.indicators.library.parabolic_sar import ParabolicSAR
-from trading.indicators.library.pvt import PVT
-from trading.indicators.library.roc import ROC
-from trading.indicators.library.rsi import RSI
-from trading.indicators.library.rvol import RVOL
 from trading.indicators.library.session_high_low_pct import SessionHighLowPct
-from trading.indicators.library.sma import SMA
-from trading.indicators.library.squeeze_momentum import SqueezeMomentum
-from trading.indicators.library.stochastic import Stochastic
-from trading.indicators.library.supertrend import Supertrend
-from trading.indicators.library.tsi import TSI
-from trading.indicators.library.ultimate_oscillator import UltimateOscillator
-from trading.indicators.library.volatility_ratio import VolatilityRatio
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.library.vroc import VROC
-from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
-from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.polars_store import PolarsStore
 
 _SYMBOLS = [
-    "INFY", "TCS", "RELIANCE", "HDFCBANK", "ICICIBANK",
-    "AXISBANK", "KOTAKBANK", "SBIN", "BAJFINANCE", "BAJAJFINSV",
-    "WIPRO", "HCLTECH", "TECHM", "LT",
-    "MARUTI", "SUNPHARMA", "DRREDDY", "DIVISLAB", "CIPLA",
-    "TITAN", "ASIANPAINT", "NESTLEIND", "HINDUNILVR", "BRITANNIA",
-    "POWERGRID", "NTPC", "ONGC", "COALINDIA", "ITC", "TATASTEEL",
+    "INFY",
+    "TCS",
+    "RELIANCE",
+    "HDFCBANK",
+    "ICICIBANK",
+    "AXISBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "WIPRO",
+    "HCLTECH",
+    "TECHM",
+    "LT",
+    "MARUTI",
+    "SUNPHARMA",
+    "DRREDDY",
+    "DIVISLAB",
+    "CIPLA",
+    "TITAN",
+    "ASIANPAINT",
+    "NESTLEIND",
+    "HINDUNILVR",
+    "BRITANNIA",
+    "POWERGRID",
+    "NTPC",
+    "ONGC",
+    "COALINDIA",
+    "ITC",
+    "TATASTEEL",
 ]
-_INTERVAL  = "15min"
-_WARMUP    = 100
+_INTERVAL = "15min"
+_WARMUP = 100
 
-_MONTH_END   = datetime(2026, 4, 30, tzinfo=UTC)
+_MONTH_END = datetime(2026, 4, 30, tzinfo=UTC)
 _MONTH_START = _MONTH_END - timedelta(days=400)
 
 _SESSION_CLASSES = (VWAP, VWAPBands, SessionHighLowPct)
@@ -106,6 +80,7 @@ _MIN_SIGNALS = 100  # minimum valid signals per indicator across all symbols
 # ---------------------------------------------------------------------------
 # Math helpers
 # ---------------------------------------------------------------------------
+
 
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 4:
@@ -127,6 +102,7 @@ def _icir(ics: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # Per-indicator signal collection (same core as _evaluate_indicator in IC test)
 # ---------------------------------------------------------------------------
+
 
 async def _collect_signals(
     label: str,
@@ -171,8 +147,12 @@ async def _collect_signals(
                 slow = await slow_ind.compute(slow_params)
                 sig = (
                     (fast - slow)
-                    if (fast is not None and slow is not None
-                        and prev_fast is not None and prev_slow is not None)
+                    if (
+                        fast is not None
+                        and slow is not None
+                        and prev_fast is not None
+                        and prev_slow is not None
+                    )
                     else None
                 )
                 prev_fast, prev_slow = fast, slow
@@ -240,6 +220,7 @@ async def _collect_signals(
 # Worker — module-level for pickling
 # ---------------------------------------------------------------------------
 
+
 def _worker_corr(args: tuple[str, list[dict]]) -> dict[str, list[float]]:
     """
     Collect signal vectors for all catalogue indicators for one symbol.
@@ -268,6 +249,7 @@ def _worker_corr(args: tuple[str, list[dict]]) -> dict[str, list[float]]:
 # Main test
 # ---------------------------------------------------------------------------
 
+
 async def test_indicator_correlation_matrix(make_store) -> None:
     """
     Compute N×N pairwise Spearman rank correlation between all indicator signals.
@@ -287,8 +269,7 @@ async def test_indicator_correlation_matrix(make_store) -> None:
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor() as executor:
         futures = [
-            loop.run_in_executor(executor, _worker_corr, (sym, rows))
-            for sym, rows in symbol_rows
+            loop.run_in_executor(executor, _worker_corr, (sym, rows)) for sym, rows in symbol_rows
         ]
         per_symbol: list[dict[str, list[float]]] = await asyncio.gather(*futures)
 
@@ -303,7 +284,9 @@ async def test_indicator_correlation_matrix(make_store) -> None:
     labels.sort()
     n = len(labels)
 
-    print(f"\n  Computing {n}x{n} correlation matrix ({n} indicators with >= {_MIN_SIGNALS} signals) ...")
+    print(
+        f"\n  Computing {n}x{n} correlation matrix ({n} indicators with >= {_MIN_SIGNALS} signals) ..."
+    )
 
     # Compute pairwise Spearman correlations
     # We need same-length vectors — pad with nan and align by position
@@ -327,7 +310,7 @@ async def test_indicator_correlation_matrix(make_store) -> None:
             corr_matrix[lbl_j][lbl_i] = corr
 
     # Print summary of high-correlation pairs
-    print(f"\n  High-correlation pairs (|corr| > 0.8):")
+    print("\n  High-correlation pairs (|corr| > 0.8):")
     high_corr_pairs: list[tuple[float, str, str]] = []
     for i, lbl_i in enumerate(labels):
         for j in range(i + 1, n):
@@ -351,8 +334,7 @@ async def test_indicator_correlation_matrix(make_store) -> None:
         writer.writerow(["indicator"] + labels)
         for lbl_i in labels:
             row = [lbl_i] + [
-                f"{corr_matrix[lbl_i].get(lbl_j, float('nan')):.4f}"
-                for lbl_j in labels
+                f"{corr_matrix[lbl_i].get(lbl_j, float('nan')):.4f}" for lbl_j in labels
             ]
             writer.writerow(row)
     print(f"\n  CSV written to {csv_path}")
@@ -411,7 +393,7 @@ async def test_indicator_correlation_matrix(make_store) -> None:
 <table>
 <thead><tr>{header_cells}</tr></thead>
 <tbody>
-{''.join(html_rows)}
+{"".join(html_rows)}
 </tbody>
 </table>
 </body>

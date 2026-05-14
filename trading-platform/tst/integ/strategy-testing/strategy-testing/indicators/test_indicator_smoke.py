@@ -11,6 +11,7 @@ Run:
     cd tst/integ/strategy-testing
     python -m pytest strategy-testing/indicators/test_indicator_smoke.py -v
 """
+
 from __future__ import annotations
 
 import math
@@ -19,125 +20,137 @@ from typing import Any
 import pytest
 
 from trading.indicators.library.adx import ADX
+from trading.indicators.library.aroon import Aroon
 from trading.indicators.library.atr import ATR
 from trading.indicators.library.bollinger import BollingerBands
+from trading.indicators.library.candle_body_ratio import CandleBodyRatio
 from trading.indicators.library.cci import CCI
 from trading.indicators.library.chaikin_volatility import ChaikinVolatility
+from trading.indicators.library.chandelier_exit import ChandelierExit
 from trading.indicators.library.cmf import CMF
 from trading.indicators.library.connors_rsi import ConnorsRSI
+from trading.indicators.library.coppock_curve import CoppockCurve
+from trading.indicators.library.distance_from_ma import DistanceFromMA
 from trading.indicators.library.donchian import DonchianChannels
 from trading.indicators.library.dpo import DPO
+from trading.indicators.library.elder_ray import ElderRay
 from trading.indicators.library.ema import EMA
 from trading.indicators.library.fisher_transform import FisherTransform
 from trading.indicators.library.gap import GapSize
 from trading.indicators.library.historical_volatility import HistoricalVolatility
+from trading.indicators.library.inside_bar import InsideBar
 from trading.indicators.library.keltner import KeltnerChannels
+from trading.indicators.library.linreg_slope import LinearRegressionSlope
 from trading.indicators.library.macd import MACD
+from trading.indicators.library.mean_reversion_score import MeanReversionScore
 from trading.indicators.library.mfi import MFI
 from trading.indicators.library.momentum import Momentum
 from trading.indicators.library.normalized_atr import NormalizedATR
 from trading.indicators.library.obv import OBV
 from trading.indicators.library.opening_range import OpeningRangePosition
 from trading.indicators.library.parabolic_sar import ParabolicSAR
+from trading.indicators.library.price_percentile import PricePercentile
+from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
 from trading.indicators.library.pvt import PVT
 from trading.indicators.library.roc import ROC
 from trading.indicators.library.rsi import RSI
+from trading.indicators.library.rsi_divergence import RSIDivergence
 from trading.indicators.library.rvol import RVOL
 from trading.indicators.library.session_high_low_pct import SessionHighLowPct
 from trading.indicators.library.sma import SMA
 from trading.indicators.library.squeeze_momentum import SqueezeMomentum
 from trading.indicators.library.stochastic import Stochastic
+from trading.indicators.library.stochastic_rsi import StochasticRSI
 from trading.indicators.library.supertrend import Supertrend
 from trading.indicators.library.tsi import TSI
 from trading.indicators.library.ultimate_oscillator import UltimateOscillator
+from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
 from trading.indicators.library.volatility_ratio import VolatilityRatio
+from trading.indicators.library.vroc import VROC
 from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwap_bands import VWAPBands
 from trading.indicators.library.vwma import VWMA
-from trading.indicators.library.vroc import VROC
-from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.library.stochastic_rsi import StochasticRSI
-from trading.indicators.library.rsi_divergence import RSIDivergence
-from trading.indicators.library.coppock_curve import CoppockCurve
-from trading.indicators.library.elder_ray import ElderRay
-from trading.indicators.library.aroon import Aroon
-from trading.indicators.library.price_percentile import PricePercentile
-from trading.indicators.library.distance_from_ma import DistanceFromMA
-from trading.indicators.library.linreg_slope import LinearRegressionSlope
-from trading.indicators.library.mean_reversion_score import MeanReversionScore
-from trading.indicators.library.chandelier_exit import ChandelierExit
-from trading.indicators.library.candle_body_ratio import CandleBodyRatio
-from trading.indicators.library.upper_shadow_ratio import UpperShadowRatio
-from trading.indicators.library.inside_bar import InsideBar
 from trading.indicators.library.weekly_rsi import WeeklyRSI
-from trading.indicators.library.price_vs_52w_high import PriceVs52wHigh
+from trading.indicators.library.williams_r import WilliamsR
 
-_SYMBOL   = "INFY"
+_SYMBOL = "INFY"
 _INTERVAL = "15min"
 
 
 def _catalogue() -> list[tuple[str, type, Any]]:
     """Return (label, IndicatorClass, params) triples for every indicator."""
     return [
-        ("EMA_9",            EMA,               EMA.Parameters(period=9)),
-        ("SMA_20",           SMA,               SMA.Parameters(period=20)),
-        ("RSI_14",           RSI,               RSI.Parameters(period=14)),
-        ("ATR_14",           ATR,               ATR.Parameters(period=14)),
-        ("ADX_14",           ADX,               ADX.Parameters(period=14)),
-        ("MACD_12_26_9",     MACD,              MACD.Parameters(fast=12, slow=26, signal=9)),
-        ("BollingerBands",   BollingerBands,    BollingerBands.Parameters(period=20, k=2.0)),
-        ("KeltnerChannels",  KeltnerChannels,   KeltnerChannels.Parameters(ema_period=20, atr_period=10, k=2.0)),
-        ("DonchianChannels", DonchianChannels,  DonchianChannels.Parameters(period=20)),
-        ("Stochastic_14_3",  Stochastic,        Stochastic.Parameters(k_period=14, d_period=3)),
-        ("WilliamsR_14",     WilliamsR,         WilliamsR.Parameters(period=14)),
-        ("CCI_20",           CCI,               CCI.Parameters(period=20)),
-        ("MFI_14",           MFI,               MFI.Parameters(period=14)),
-        ("CMF_20",           CMF,               CMF.Parameters(period=20)),
-        ("OBV_20",           OBV,               OBV.Parameters(period=20)),
-        ("VWMA_20",          VWMA,              VWMA.Parameters(period=20)),
-        ("Momentum_10",      Momentum,          Momentum.Parameters(period=10)),
-        ("ROC_10",           ROC,               ROC.Parameters(period=10)),
-        ("ChaikinVol_10",    ChaikinVolatility, ChaikinVolatility.Parameters(ema_period=10, roc_period=10)),
-        ("HistVol_20",       HistoricalVolatility, HistoricalVolatility.Parameters(period=20)),
-        ("Supertrend_10",    Supertrend,        Supertrend.Parameters(period=10, multiplier=3.0)),
-        ("ParabolicSAR",     ParabolicSAR,      ParabolicSAR.Parameters()),
-        ("ConnorsRSI",       ConnorsRSI,        ConnorsRSI.Parameters()),
-        ("FisherTransform",  FisherTransform,   FisherTransform.Parameters(period=10)),
-        ("UltimateOsc",      UltimateOscillator, UltimateOscillator.Parameters()),
-        ("DPO_20",           DPO,               DPO.Parameters(period=20)),
-        ("TSI",              TSI,               TSI.Parameters()),
-        ("GapSize",          GapSize,           GapSize.Parameters()),
-        ("OpeningRange",     OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=4)),
-        ("RVOL_20",          RVOL,              RVOL.Parameters(period=20)),
-        ("VROC_14",          VROC,              VROC.Parameters(period=14)),
-        ("PVT_20",           PVT,               PVT.Parameters(period=20)),
-        ("VolRatio",         VolatilityRatio,   VolatilityRatio.Parameters()),
-        ("SqueezeMom",       SqueezeMomentum,   SqueezeMomentum.Parameters()),
-        ("NormATR_14",       NormalizedATR,     NormalizedATR.Parameters(period=14)),
+        ("EMA_9", EMA, EMA.Parameters(period=9)),
+        ("SMA_20", SMA, SMA.Parameters(period=20)),
+        ("RSI_14", RSI, RSI.Parameters(period=14)),
+        ("ATR_14", ATR, ATR.Parameters(period=14)),
+        ("ADX_14", ADX, ADX.Parameters(period=14)),
+        ("MACD_12_26_9", MACD, MACD.Parameters(fast=12, slow=26, signal=9)),
+        ("BollingerBands", BollingerBands, BollingerBands.Parameters(period=20, k=2.0)),
+        (
+            "KeltnerChannels",
+            KeltnerChannels,
+            KeltnerChannels.Parameters(ema_period=20, atr_period=10, k=2.0),
+        ),
+        ("DonchianChannels", DonchianChannels, DonchianChannels.Parameters(period=20)),
+        ("Stochastic_14_3", Stochastic, Stochastic.Parameters(k_period=14, d_period=3)),
+        ("WilliamsR_14", WilliamsR, WilliamsR.Parameters(period=14)),
+        ("CCI_20", CCI, CCI.Parameters(period=20)),
+        ("MFI_14", MFI, MFI.Parameters(period=14)),
+        ("CMF_20", CMF, CMF.Parameters(period=20)),
+        ("OBV_20", OBV, OBV.Parameters(period=20)),
+        ("VWMA_20", VWMA, VWMA.Parameters(period=20)),
+        ("Momentum_10", Momentum, Momentum.Parameters(period=10)),
+        ("ROC_10", ROC, ROC.Parameters(period=10)),
+        (
+            "ChaikinVol_10",
+            ChaikinVolatility,
+            ChaikinVolatility.Parameters(ema_period=10, roc_period=10),
+        ),
+        ("HistVol_20", HistoricalVolatility, HistoricalVolatility.Parameters(period=20)),
+        ("Supertrend_10", Supertrend, Supertrend.Parameters(period=10, multiplier=3.0)),
+        ("ParabolicSAR", ParabolicSAR, ParabolicSAR.Parameters()),
+        ("ConnorsRSI", ConnorsRSI, ConnorsRSI.Parameters()),
+        ("FisherTransform", FisherTransform, FisherTransform.Parameters(period=10)),
+        ("UltimateOsc", UltimateOscillator, UltimateOscillator.Parameters()),
+        ("DPO_20", DPO, DPO.Parameters(period=20)),
+        ("TSI", TSI, TSI.Parameters()),
+        ("GapSize", GapSize, GapSize.Parameters()),
+        ("OpeningRange", OpeningRangePosition, OpeningRangePosition.Parameters(range_bars=4)),
+        ("RVOL_20", RVOL, RVOL.Parameters(period=20)),
+        ("VROC_14", VROC, VROC.Parameters(period=14)),
+        ("PVT_20", PVT, PVT.Parameters(period=20)),
+        ("VolRatio", VolatilityRatio, VolatilityRatio.Parameters()),
+        ("SqueezeMom", SqueezeMomentum, SqueezeMomentum.Parameters()),
+        ("NormATR_14", NormalizedATR, NormalizedATR.Parameters(period=14)),
         # Swing trading indicators
-        ("StochRSI_14",      StochasticRSI,     StochasticRSI.Parameters(rsi_period=14, stoch_period=14)),
-        ("RSIDivergence",    RSIDivergence,     RSIDivergence.Parameters(rsi_period=14, divergence_window=10)),
-        ("CoppockCurve",     CoppockCurve,      CoppockCurve.Parameters()),
-        ("ElderRay_13",      ElderRay,          ElderRay.Parameters(period=13)),
-        ("Aroon_25",         Aroon,             Aroon.Parameters(period=25)),
-        ("PricePercentile",  PricePercentile,   PricePercentile.Parameters(period=50)),
-        ("DistFromMA_20",    DistanceFromMA,    DistanceFromMA.Parameters(period=20)),
-        ("LinRegSlope_20",   LinearRegressionSlope, LinearRegressionSlope.Parameters(period=20)),
-        ("MeanRevScore",     MeanReversionScore, MeanReversionScore.Parameters()),
-        ("Chandelier_22",    ChandelierExit,    ChandelierExit.Parameters(period=22)),
-        ("CandleBody_5",     CandleBodyRatio,   CandleBodyRatio.Parameters(period=5)),
-        ("UpperShadow_5",    UpperShadowRatio,  UpperShadowRatio.Parameters(period=5)),
-        ("InsideBar_10",     InsideBar,         InsideBar.Parameters(period=10)),
-        ("WeeklyRSI_14",     WeeklyRSI,         WeeklyRSI.Parameters(rsi_period=14)),
-        ("PriceVs52w",       PriceVs52wHigh,    PriceVs52wHigh.Parameters(period=252)),
+        ("StochRSI_14", StochasticRSI, StochasticRSI.Parameters(rsi_period=14, stoch_period=14)),
+        (
+            "RSIDivergence",
+            RSIDivergence,
+            RSIDivergence.Parameters(rsi_period=14, divergence_window=10),
+        ),
+        ("CoppockCurve", CoppockCurve, CoppockCurve.Parameters()),
+        ("ElderRay_13", ElderRay, ElderRay.Parameters(period=13)),
+        ("Aroon_25", Aroon, Aroon.Parameters(period=25)),
+        ("PricePercentile", PricePercentile, PricePercentile.Parameters(period=50)),
+        ("DistFromMA_20", DistanceFromMA, DistanceFromMA.Parameters(period=20)),
+        ("LinRegSlope_20", LinearRegressionSlope, LinearRegressionSlope.Parameters(period=20)),
+        ("MeanRevScore", MeanReversionScore, MeanReversionScore.Parameters()),
+        ("Chandelier_22", ChandelierExit, ChandelierExit.Parameters(period=22)),
+        ("CandleBody_5", CandleBodyRatio, CandleBodyRatio.Parameters(period=5)),
+        ("UpperShadow_5", UpperShadowRatio, UpperShadowRatio.Parameters(period=5)),
+        ("InsideBar_10", InsideBar, InsideBar.Parameters(period=10)),
+        ("WeeklyRSI_14", WeeklyRSI, WeeklyRSI.Parameters(rsi_period=14)),
+        ("PriceVs52w", PriceVs52wHigh, PriceVs52wHigh.Parameters(period=252)),
     ]
 
 
 def _session_catalogue() -> list[tuple[str, type, Any]]:
     """Session-aware indicators that need a clock in __init__."""
     return [
-        ("VWAP",         VWAP,              VWAP.Parameters()),
-        ("VWAPBands",    VWAPBands,         VWAPBands.Parameters()),
+        ("VWAP", VWAP, VWAP.Parameters()),
+        ("VWAPBands", VWAPBands, VWAPBands.Parameters()),
         ("SessionHLPct", SessionHighLowPct, SessionHighLowPct.Parameters()),
     ]
 
@@ -193,9 +206,7 @@ async def test_all_indicators_produce_values(make_store, simulated_clock) -> Non
     store, rows = make_store(_SYMBOL, _INTERVAL)
     assert rows, "make_store returned no rows"
 
-    all_entries = _catalogue() + [
-        (lbl, cls, params) for lbl, cls, params in _session_catalogue()
-    ]
+    all_entries = _catalogue() + [(lbl, cls, params) for lbl, cls, params in _session_catalogue()]
     none_count = 0
     errors: list[str] = []
 

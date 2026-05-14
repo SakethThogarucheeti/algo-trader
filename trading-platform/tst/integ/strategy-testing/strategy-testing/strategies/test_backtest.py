@@ -148,9 +148,9 @@ async def test_backtest_trending_market_generates_signals(pg_engine, tmp_path):
     )
     report = await _run(config, pg_engine, tmp_path)
 
-    assert (
-        report.total_trades >= 1
-    ), "Trending market over 500 bars should generate at least one EMA crossover trade"
+    assert report.total_trades >= 1, (
+        "Trending market over 500 bars should generate at least one EMA crossover trade"
+    )
 
 
 async def test_backtest_html_report_generated(pg_engine, tmp_path):
@@ -229,7 +229,7 @@ async def test_ema_crossover_real_data_completes(pg_engine, tmp_path):
     assert 0.0 <= report.max_drawdown <= 1.0
     assert 0.0 <= report.win_rate <= 1.0
 
-    print(f"\n{'='*55}")
+    print(f"\n{'=' * 55}")
     print("  EMA Crossover — Real Data Backtest")
     print(f"  Symbols  : {', '.join(_REAL_DATA_SYMBOLS)}")
     print(f"  Period   : {_REAL_START.date()} to {_REAL_END.date()}")
@@ -240,7 +240,7 @@ async def test_ema_crossover_real_data_completes(pg_engine, tmp_path):
     print(f"  Sharpe   : {report.sharpe_ratio:.2f}")
     print(f"  CAGR     : {report.cagr:.1%}")
     print(f"  Report   : {tmp_path / report.session_id / 'report.html'}")
-    print(f"{'='*55}")
+    print(f"{'=' * 55}")
 
 
 @pytest.mark.skipif(
