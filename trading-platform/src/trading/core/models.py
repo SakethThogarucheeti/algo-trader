@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -30,7 +30,7 @@ class Candle(Base):
     high: Mapped[Decimal] = mapped_column(Numeric(14, 4))
     low: Mapped[Decimal] = mapped_column(Numeric(14, 4))
     close: Mapped[Decimal] = mapped_column(Numeric(14, 4))
-    volume: Mapped[int]
+    volume: Mapped[int] = mapped_column(BigInteger)
 
     __table_args__ = (
         UniqueConstraint("symbol", "interval", "ts", name="uq_candle_symbol_interval_ts"),
@@ -128,7 +128,7 @@ class TickLog(Base):
     symbol: Mapped[str] = mapped_column(String, index=True)
     instrument_type: Mapped[str] = mapped_column(String)
     last_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
-    volume: Mapped[int]
+    volume: Mapped[int] = mapped_column(BigInteger)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

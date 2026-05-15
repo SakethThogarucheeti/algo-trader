@@ -42,6 +42,8 @@ class _KiteProtocol(Protocol):
         oi: bool = False,
     ) -> Sequence[ZerodhaCandle]: ...
 
+    def place_order(self, **kwargs: Any) -> str: ...
+
 
 class KiteClient:
     def __init__(self, api_key: str) -> None:
@@ -90,3 +92,6 @@ class KiteClient:
             end,
             interval,
         )
+
+    def place_order(self, **kwargs: Any) -> str:
+        return str(self._kite.place_order(**kwargs))

@@ -116,19 +116,21 @@ class ZerodhaBroker(Broker):
         kite_order_type = _ORDER_TYPE_MAP[order_type]
         transaction_type = "BUY" if side == Side.BUY else "SELL"
 
+        def _place() -> str:
+            return self.client.place_order(
+                variety="regular",
+                exchange=self.exchange,
+                tradingsymbol=symbol,
+                transaction_type=transaction_type,
+                quantity=qty,
+                product="MIS",
+                order_type=kite_order_type,
+                price=limit_price,
+            )
+
         try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.client.place_order,
-                    variety="regular",
-                    exchange=self.exchange,
-                    tradingsymbol=symbol,
-                    transaction_type=transaction_type,
-                    quantity=qty,
-                    product="MIS",
-                    order_type=kite_order_type,
-                    price=limit_price,
-                ),
+            order_id = await asyncio.wait_for(
+                asyncio.to_thread(_place),
                 timeout=self._order_timeout_secs,
             )
         except TimeoutError as err:
@@ -141,6 +143,6 @@ class ZerodhaBroker(Broker):
             transaction_type,
             symbol,
             qty,
-            result,
+            order_id,
         )
-        return str(result)
+        return order_id

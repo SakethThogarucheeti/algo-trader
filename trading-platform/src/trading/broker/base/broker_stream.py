@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from trading.broker.types import Tick
+
 
 class BrokerStream(ABC):
     """
@@ -19,8 +21,8 @@ class BrokerStream(ABC):
         """Register a callback invoked when the WebSocket connection is established."""
 
     @abstractmethod
-    def set_on_ticks(self, callback: Callable[[list[dict]], None]) -> None:
-        """Register a callback invoked with each batch of raw tick dicts."""
+    def set_on_ticks(self, callback: Callable[[list[Tick]], None]) -> None:
+        """Register a callback invoked with each batch of tick dicts."""
 
     @abstractmethod
     def set_on_disconnect(self, callback: Callable[[int, str], None]) -> None:
