@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # When empty, a single default algo is assembled from all DB instruments
     # using default_equity as its capital.
     # ------------------------------------------------------------------ #
-    algos: list[AlgoSettings] = Field(default_factory=list)
+    algos: list[AlgoSettings] = Field(default_factory=list)  # type: ignore[assignment]
     default_equity: float = Field(default=10_000.0, gt=0)
 
     # ------------------------------------------------------------------ #
@@ -164,4 +164,4 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the singleton Settings instance (loaded once, cached forever)."""
-    return Settings()
+    return Settings()  # type: ignore[call-arg]  # args supplied via env vars

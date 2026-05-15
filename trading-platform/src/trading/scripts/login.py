@@ -110,8 +110,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
-    def log_message(self, fmt: str, *args: object) -> None:
-        # Suppress default access log noise
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass
 
 

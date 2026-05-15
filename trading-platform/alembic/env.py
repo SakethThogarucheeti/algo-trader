@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from sqlalchemy import pool
@@ -51,7 +52,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection):
+def do_run_migrations(connection: Any) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

@@ -34,7 +34,7 @@ _DEFAULT_PATH = _PROJECT_ROOT / "strategy_config.json"
 class StrategyParams:
     id: str
     params: dict[str, Any]
-    feature_engine_params: dict[str, Any] = field(default_factory=dict)
+    feature_engine_params: dict[str, Any] = field(default_factory=dict)  # type: ignore[assignment]
 
 
 @dataclass
@@ -45,20 +45,20 @@ class HyperparamSearchConfig:
     equity: float
     months: int | None  # None → use all available data
     end_date: str  # ISO date string, e.g. "2026-04-17"
-    grid: dict[str, list]  # param_name → list of values to sweep
+    grid: dict[str, list[Any]]  # param_name → list of values to sweep
 
     # Convenience accessors for EMA grid (read from grid dict)
     @property
     def fast_periods(self) -> list[int]:
-        return list(self.grid.get("fast_periods", []))
+        return [int(x) for x in self.grid.get("fast_periods", [])]
 
     @property
     def slow_periods(self) -> list[int]:
-        return list(self.grid.get("slow_periods", []))
+        return [int(x) for x in self.grid.get("slow_periods", [])]
 
     @property
     def atr_multipliers(self) -> list[float]:
-        return list(self.grid.get("atr_multipliers", []))
+        return [float(x) for x in self.grid.get("atr_multipliers", [])]
 
 
 @dataclass
@@ -75,7 +75,7 @@ def _coerce_ema_spans(params: dict[str, Any]) -> dict[str, Any]:
     """Convert ema_spans list → tuple (TechnicalFeatureEngine expects tuple)."""
     result = dict(params)
     if "ema_spans" in result and isinstance(result["ema_spans"], list):
-        result["ema_spans"] = tuple(result["ema_spans"])
+        result["ema_spans"] = tuple(result["ema_spans"])  # type: ignore[arg-type]
     return result
 
 

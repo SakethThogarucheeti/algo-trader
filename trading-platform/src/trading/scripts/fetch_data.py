@@ -64,7 +64,7 @@ def _chunk_ranges(
     start: datetime, end: datetime, chunk_days: int
 ) -> list[tuple[datetime, datetime]]:
     """Split [start, end] into chunks of at most chunk_days days."""
-    ranges = []
+    ranges: list[tuple[datetime, datetime]] = []
     cursor = start
     while cursor < end:
         chunk_end = min(cursor + timedelta(days=chunk_days), end)
@@ -151,8 +151,8 @@ def _fetch_symbol(
             c_end.date(),
         )
         try:
-            df = broker.get_ohlc(symbol, interval, c_start, c_end)  # type: ignore[attr-defined]
-            all_frames.append(df)
+            df: pl.DataFrame = broker.get_ohlc(symbol, interval, c_start, c_end)  # type: ignore[attr-defined]
+            all_frames.append(df)  # type: ignore[arg-type]
         except ValueError as e:
             # Kite returns empty for market holidays / weekends — not an error
             log.warning("    skipped: %s", e)

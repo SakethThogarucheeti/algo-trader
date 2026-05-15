@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
+from typing import Any
 
 _log = logging.getLogger(__name__)
 
 
-def fire(coro: asyncio.Coroutine[object, object, object]) -> asyncio.Task[object]:
+def fire(coro: Coroutine[Any, Any, object]) -> asyncio.Task[object]:
     """
     Schedule a coroutine as a background task and log any unhandled exception.
 

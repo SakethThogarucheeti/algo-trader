@@ -51,13 +51,16 @@ class _ThreadIdFilter(logging.Filter):
         return True
 
 
+_thread_id_filter = _ThreadIdFilter()
+
 # Stream handler — live output to terminal, force UTF-8 on Windows
 _stream_handler = logging.StreamHandler(
     open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
 )
 _stream_handler.setFormatter(_fmt)
+_stream_handler.addFilter(_thread_id_filter)
 
-# One log file per calendar day — named logs/trading.2026-05-14.log at startup.
+# One log file per calendar day — named logs/trading.2026-05-15.log at startup.
 _file_handler = RotatingFileHandler(
     _LOG_DIR / f"trading.{date.today()}.log",
     maxBytes=50 * 1024 * 1024,
@@ -65,12 +68,9 @@ _file_handler = RotatingFileHandler(
     encoding="utf-8",
 )
 _file_handler.setFormatter(_fmt)
+_file_handler.addFilter(_thread_id_filter)
 
 logging.basicConfig(level=logging.INFO, handlers=[_stream_handler, _file_handler])
-
-# Attach the filter to the root logger so it runs for every record regardless
-# of which handler ultimately receives it.
-logging.getLogger().addFilter(_ThreadIdFilter())
 logger = logging.getLogger(__name__)
 
 _IST = ZoneInfo("Asia/Kolkata")

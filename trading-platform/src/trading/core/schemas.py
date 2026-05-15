@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -93,7 +93,7 @@ class SignalEvent(BaseModel):
     strategy_id: str
     signal_type: SignalType
     stop_distance: float = Field(gt=0)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     tick_log_id: int  # copied from the candle that triggered this signal
 
 
@@ -112,7 +112,7 @@ class OrderEvent(BaseModel):
     signal_id: UUID
     kite_order_id: str
     status: OrderStatus
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class FillEvent(BaseModel):
