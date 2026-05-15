@@ -54,6 +54,10 @@ class ExecRegistry(AbstractRegistry):
         self._trading = trading
         self._price_store = price_store if config.exec_id == "paper" else None
 
+    @property
+    def config(self) -> ExecConfig:
+        return self._config
+
     # ------------------------------------------------------------------
     # AbstractRegistry
     # ------------------------------------------------------------------
@@ -106,11 +110,12 @@ class ExecRegistry(AbstractRegistry):
         # Paper trading: simulate immediate fill
         if self._price_store is not None and final_status == OrderStatus.PLACED:
             _ps = self._price_store
-            fill_price: float | None = (
-                _ps.fill_price(event.symbol, event.side)  # type: ignore[attr-defined]
-                if hasattr(_ps, "fill_price")
-                else _ps.get(event.symbol)  # type: ignore[attr-defined]
-            )
+            if hasattr(_ps, "fill_price"):
+                _fp = _ps.fill_price(event.symbol, event.side)  # type: ignore[attr-defined]
+                fill_price: float | None = float(_fp) if _fp is not None else None  # type: ignore[arg-type]
+            else:
+                raw = _ps.get(event.symbol)  # type: ignore[attr-defined]
+                fill_price = float(raw) if raw is not None else None
             if fill_price is None:
                 logger.warning("ExecRegistry: no price known for %s — fill skipped", event.symbol)
             else:

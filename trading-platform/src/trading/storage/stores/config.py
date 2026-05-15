@@ -79,10 +79,10 @@ class ConfigStore(AbstractConfigStore):
             )
             state_map = {s.name: s for s in states_result.scalars().all()}
 
-        out = []
+        out: list[dict[str, object]] = []
         for cfg in configs:
             state_obj = state_map.get(cfg.name)
-            state = json.loads(state_obj.state) if state_obj else {}
+            state: dict[str, object] = json.loads(state_obj.state) if state_obj else {}
             out.append(
                 {
                     "name": cfg.name,

@@ -44,7 +44,7 @@ class HeartbeatStore(AbstractHeartbeatStore):
             result = await session.execute(stmt)
             heartbeats = result.scalars().all()
 
-        stale = []
+        stale: list[str] = []
         for hb in heartbeats:
             last_seen = hb.last_seen
             if last_seen.tzinfo is None:

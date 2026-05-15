@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ValidationError
 
 from trading.broker.base.broker_stream import BrokerStream
+from trading.broker.types import Tick
 from trading.core.messaging import AbstractRegistry
 from trading.core.models import Instrument
 from trading.core.schemas import InstrumentType, TickEvent
@@ -85,14 +86,14 @@ class TickRegistry(AbstractRegistry):
     # AbstractRegistry
     # ------------------------------------------------------------------
 
-    async def handle(self, raw: dict) -> TickEvent | None:
+    async def handle(self, raw: Tick) -> TickEvent | None:  # type: ignore[override]
         """
         Validate and persist one raw tick dict from the broker WebSocket.
 
         Returns a TickEvent with a real DB-assigned tick_log_id, or None
         if the tick is for an unknown instrument or fails validation.
         """
-        token: int | None = raw.get("instrument_token")  # type: ignore[assignment]
+        token: int | None = raw.get("instrument_token")
         if token is None:
             return None
 

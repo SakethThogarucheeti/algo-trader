@@ -64,6 +64,10 @@ class RiskRegistry(AbstractRegistry):
         self._audit = audit
         self._clock: Clock = clock or SystemClock()
 
+    @property
+    def config(self) -> RiskConfig:
+        return self._config
+
     # ------------------------------------------------------------------
     # AbstractRegistry
     # ------------------------------------------------------------------
@@ -171,8 +175,8 @@ class RiskRegistry(AbstractRegistry):
         except Exception:
             logger.debug("RiskRegistry: audit log failed for rejection %s", event.signal_id)
 
-    async def _log_decision(self, step: str, event: SignalEvent, context: dict) -> None:
-        if event.tick_log_id == 0:
+    async def _log_decision(self, step: str, event: SignalEvent, context: dict[str, object]) -> None:
+        if event.tick_log_id <= 0:
             return
         try:
             await self._audit.log_decision(

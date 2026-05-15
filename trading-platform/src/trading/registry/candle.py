@@ -11,6 +11,7 @@ from trading.core.messaging import AbstractRegistry
 from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
 from trading.core.tasks import fire
+from trading.indicators.types import CandleRow
 from trading.storage.stores.audit import AbstractAuditStore
 from trading.storage.stores.candle import AbstractCandleDataStore
 
@@ -157,7 +158,7 @@ class CandleRegistry(AbstractRegistry):
                     continue
                 if df.is_empty():
                     continue
-                warmup_rows: list[dict] = []
+                warmup_rows: list[CandleRow] = []
                 for row in df.tail(self._config.warmup_count).iter_rows(named=True):
                     try:
                         ts = _ensure_utc(row["date"])
@@ -176,16 +177,16 @@ class CandleRegistry(AbstractRegistry):
                             )
                         )
                         warmup_rows.append(
-                            {
-                                "symbol": sc.symbol,
-                                "interval": interval,
-                                "ts": ts,
-                                "open": float(row["open"]),
-                                "high": float(row["high"]),
-                                "low": float(row["low"]),
-                                "close": float(row["close"]),
-                                "volume": int(row.get("volume", 0)),
-                            }
+                            CandleRow(
+                                symbol=sc.symbol,
+                                interval=interval,
+                                ts=ts,
+                                open=float(row["open"]),
+                                high=float(row["high"]),
+                                low=float(row["low"]),
+                                close=float(row["close"]),
+                                volume=int(row.get("volume", 0)),
+                            )
                         )
                     except Exception as exc:
                         logger.warning(
@@ -211,7 +212,7 @@ class CandleRegistry(AbstractRegistry):
     # AbstractRegistry
     # ------------------------------------------------------------------
 
-    async def handle(self, tick: TickEvent) -> CandleEvent | None:
+    async def handle(self, tick: TickEvent) -> CandleEvent | None:  # type: ignore[override]
         """
         Update the partial bar for this tick's instrument.
 
@@ -285,7 +286,7 @@ class CandleRegistry(AbstractRegistry):
                     }
                 ]
             )
-            if event.tick_log_id != 0:
+            if event.tick_log_id > 0:
                 await self._audit.log_decision(
                     step="CANDLE_EMITTED",
                     symbol=event.symbol,
@@ -300,9 +301,11 @@ class CandleRegistry(AbstractRegistry):
                         "candle_ts": event.timestamp.isoformat(),
                     },
                 )
-        except Exception:
-            logger.exception(
-                "CandleRegistry: candle persist/log failed for %s %s — audit trail gap",
+        except Exception as exc:
+            logger.error(
+                "CandleRegistry: candle persist/log failed for %s %s — %s: %s",
                 event.symbol,
                 event.interval,
+                type(exc).__name__,
+                exc,
             )

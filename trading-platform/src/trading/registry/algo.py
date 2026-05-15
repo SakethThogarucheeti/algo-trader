@@ -30,7 +30,7 @@ class AlgoRunConfig(BaseModel):
 
 
 @dataclass
-class _AlgoInstance:
+class AlgoInstance:
     strategy: Strategy
     instrument_type: InstrumentType
     bars_seen: int = 0
@@ -52,14 +52,14 @@ class AlgoRegistry(AbstractRegistry):
         chart: AbstractChartStore,
         config_store: AbstractConfigStore,
         audit: AbstractAuditStore,
-        algos: dict[str, _AlgoInstance] | None = None,
+        algos: dict[str, AlgoInstance] | None = None,
         store: PolarsStore | None = None,
     ) -> None:
         self._config = config
         self._chart = chart
         self._config_store = config_store
         self._audit = audit
-        self._algos: dict[str, _AlgoInstance] = algos if algos is not None else {}
+        self._algos: dict[str, AlgoInstance] = algos if algos is not None else {}
         self._store: PolarsStore = store if store is not None else PolarsStore()
         self._indicator_context: IndicatorContext = IndicatorContext(self._store)
 
@@ -68,6 +68,14 @@ class AlgoRegistry(AbstractRegistry):
                 "AlgoRegistry[%s]: no algo instances — will produce no signals",
                 config.algo_name,
             )
+
+    @property
+    def config(self) -> AlgoRunConfig:
+        return self._config
+
+    @property
+    def algos(self) -> dict[str, AlgoInstance]:
+        return self._algos
 
     def set_indicator_context(self, context: IndicatorContext) -> None:
         self._indicator_context = context
@@ -97,7 +105,7 @@ class AlgoRegistry(AbstractRegistry):
         except Exception:
             logger.warning("AlgoRegistry: indicator log failed for %s/%s", chart, series)
 
-    async def handle(self, candle: CandleEvent) -> list[SignalEvent]:
+    async def handle(self, candle: CandleEvent) -> list[SignalEvent]:  # type: ignore[override]
         instance = self._algos.get(candle.symbol)
         if instance is None:
             return []
@@ -160,7 +168,7 @@ class AlgoRegistry(AbstractRegistry):
         )
         return [signal_event]
 
-    async def _upsert_state(self, instance: _AlgoInstance) -> None:
+    async def _upsert_state(self, instance: AlgoInstance) -> None:
         warmup_complete = instance.warmed_up
         state: dict[str, object] = {
             "bars_seen": instance.bars_seen,
@@ -178,7 +186,7 @@ class AlgoRegistry(AbstractRegistry):
             logger.warning("AlgoRegistry: state upsert failed for %s", self._config.algo_name, exc_info=True)
 
     async def _log_signal(self, event: SignalEvent, algo_name: str) -> None:
-        if event.tick_log_id == 0:
+        if event.tick_log_id <= 0:
             return
         try:
             await self._audit.log_decision(

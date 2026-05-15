@@ -14,7 +14,7 @@ from trading.reports.pnl import compute_pnl
 logger = logging.getLogger(__name__)
 
 
-def _safe_json(s: str | None) -> dict:
+def _safe_json(s: str | None) -> dict[str, object]:
     if not s:
         return {}
     try:
@@ -130,11 +130,11 @@ def print_strategy_section(
             d = symbol_data[sig.symbol]
             if sig.side == "BUY":
                 d["buys"] = int(d["buys"]) + 1  # type: ignore[arg-type]
-                d["gross"] = float(d["gross"]) - order.qty * float(order.avg_price)
+                d["gross"] = float(d["gross"]) - order.qty * float(order.avg_price)  # type: ignore[arg-type]
             else:
                 d["sells"] = int(d["sells"]) + 1  # type: ignore[arg-type]
-                d["gross"] = float(d["gross"]) + order.qty * float(order.avg_price)
-            d["volume"] = int(d["volume"]) + order.qty
+                d["gross"] = float(d["gross"]) + order.qty * float(order.avg_price)  # type: ignore[arg-type]
+            d["volume"] = int(d["volume"]) + order.qty  # type: ignore[arg-type]
 
     if symbol_data:
         print(f"    {'Symbol':<16}{'Buys':>6}{'Sells':>6}{'Volume':>10}{'Cash Flow':>14}")
@@ -198,7 +198,7 @@ def print_strategy_section(
         row("Buy-and-hold return", f"{'+' if b_pct >= 0 else ''}{b_pct:.2f}%")
         if pnl_map:
             total_capital = sum(
-                float(cfg["equity"]) for cfg in algo_configs if cfg.get("enabled")
+                float(cfg["equity"]) for cfg in algo_configs if cfg.get("enabled")  # type: ignore[arg-type]
             )
             if total_capital:
                 algo_pct = total_net / total_capital * 100

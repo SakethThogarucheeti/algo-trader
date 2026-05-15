@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 _NIFTY_SYMBOL = "NIFTY 50"
 
 
-def _safe_json(s: str | None) -> dict:
+def _safe_json(s: str | None) -> dict[str, object]:
     if not s:
         return {}
     try:
@@ -97,7 +97,7 @@ async def fetch_algo_configs(session: AsyncSession) -> list[dict[str, object]]:
     """Current algo config + state snapshot — not windowed by date."""
     result = await session.execute(select(AlgoConfig).options(selectinload(AlgoConfig.state)))
     configs = result.scalars().all()
-    out = []
+    out: list[dict[str, object]] = []
     for cfg in configs:
         state = _safe_json(cfg.state.state if cfg.state else None)
         out.append(

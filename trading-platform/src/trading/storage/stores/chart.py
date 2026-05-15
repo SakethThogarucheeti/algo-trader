@@ -39,7 +39,7 @@ class AbstractChartStore(ABC):
         since: datetime,
         session_id: str | None = None,
         limit: int = 500,
-    ) -> dict[str, list[dict]]: ...
+    ) -> dict[str, list[dict[str, object]]]: ...
 
 
 class ChartStore(AbstractChartStore):
@@ -100,7 +100,7 @@ class ChartStore(AbstractChartStore):
         since: datetime,
         session_id: str | None = None,
         limit: int = 500,
-    ) -> dict[str, list[dict]]:
+    ) -> dict[str, list[dict[str, object]]]:
         stmt = (
             select(IndicatorLog)
             .where(
@@ -116,7 +116,7 @@ class ChartStore(AbstractChartStore):
         )
         async with self._sf() as session:
             result = await session.execute(stmt)
-            out: dict[str, list[dict]] = {}
+            out: dict[str, list[dict[str, object]]] = {}
             for row in result.scalars().all():
                 out.setdefault(row.series, []).append(
                     {"ts": row.ts.isoformat(), "value": row.value}

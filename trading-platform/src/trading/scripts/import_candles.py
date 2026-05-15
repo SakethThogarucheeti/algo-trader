@@ -19,8 +19,11 @@ import asyncio
 import logging
 from datetime import UTC
 from pathlib import Path
+from typing import Generator
 
 import polars as pl
+
+from trading.indicators.types import CandleRow
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _discover(data_dir: Path, symbols: list[str] | None, intervals: list[str] | None):
+def _discover(data_dir: Path, symbols: list[str] | None, intervals: list[str] | None) -> Generator[tuple[str, str, Path], None, None]:
     """Yield (symbol, interval, path) for every matching Parquet file."""
     if not data_dir.exists():
         logger.error("data-dir %s does not exist", data_dir)
@@ -71,7 +74,7 @@ def _discover(data_dir: Path, symbols: list[str] | None, intervals: list[str] | 
             yield sym_dir.name, interval, parquet
 
 
-def _load_parquet(symbol: str, interval: str, path: Path) -> list[dict]:
+def _load_parquet(symbol: str, interval: str, path: Path) -> list[CandleRow]:
     """Read a Parquet file and return a list of candle dicts."""
     try:
         df = pl.read_parquet(path)
@@ -98,7 +101,7 @@ def _load_parquet(symbol: str, interval: str, path: Path) -> list[dict]:
     if "volume" not in df.columns:
         df = df.with_columns(pl.lit(0).alias("volume"))
 
-    rows = []
+    rows: list[CandleRow] = []
     for row in df.iter_rows(named=True):
         ts = row["date"]
         if hasattr(ts, "tzinfo") and ts.tzinfo is None:
@@ -106,16 +109,16 @@ def _load_parquet(symbol: str, interval: str, path: Path) -> list[dict]:
         elif not hasattr(ts, "tzinfo"):
             continue  # skip non-datetime rows
         rows.append(
-            {
-                "symbol": symbol,
-                "interval": interval,
-                "ts": ts,
-                "open": float(row["open"]),
-                "high": float(row["high"]),
-                "low": float(row["low"]),
-                "close": float(row["close"]),
-                "volume": int(row.get("volume") or 0),
-            }
+            CandleRow(
+                symbol=symbol,
+                interval=interval,
+                ts=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=int(row.get("volume") or 0),
+            )
         )
     return rows
 
