@@ -19,11 +19,11 @@ class OrderExecutor(Component):
     """
 
     def __init__(self, exec_registry: ExecRegistry) -> None:
-        super().__init__(name=f"order_executor[{exec_registry._config.exec_id}]")
+        super().__init__(name=f"order_executor[{exec_registry.config.exec_id}]")
         self._registry = exec_registry
 
     async def _setup(self) -> None:
-        logger.info("OrderExecutor: ready (exec_id=%s)", self._registry._config.exec_id)
+        logger.info("OrderExecutor: ready (exec_id=%s)", self._registry.config.exec_id)
 
     async def _run(self) -> None:
         await sleep_forever()

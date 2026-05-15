@@ -23,7 +23,7 @@ class RiskController(Component):
         self._registry = risk_registry
 
     async def _setup(self) -> None:
-        logger.info("RiskController: ready (rc_id=%s)", self._registry._config.rc_id)
+        logger.info("RiskController: ready (rc_id=%s)", self._registry.config.rc_id)
 
     async def _run(self) -> None:
         await sleep_forever()

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
 from trading.indicators.library.atr import ATR
 from trading.indicators.library.ema import EMA
+from trading.indicators.store import AbstractCandleStore
 from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class EmaCrossoverStrategy(Strategy):
         self._slow_period = slow
         self._atr_period = atr_period
         self._atr_multiplier = atr_multiplier
-        self._store: Any = None
+        self._store: AbstractCandleStore | None = None
         # indicator cache: symbol → (fast_ema, slow_ema, atr)
         self._inds: dict[str, tuple[EMA, EMA, ATR]] = {}
         self._prev_fast: dict[str, float | None] = {}
@@ -51,16 +51,16 @@ class EmaCrossoverStrategy(Strategy):
         self._last_atr: float | None = None
         self._last_close: float | None = None
 
-    def set_store(self, store: Any) -> None:
+    def set_store(self, store: AbstractCandleStore) -> None:
         self._store = store
 
     def _get_inds(self, symbol: str, interval: str) -> tuple[EMA, EMA, ATR]:
         if symbol not in self._inds:
-            store = self._store
+            assert self._store is not None, "set_store() must be called before on_candle()"
             self._inds[symbol] = (
-                EMA(store, symbol, interval),
-                EMA(store, symbol, interval),
-                ATR(store, symbol, interval),
+                EMA(self._store, symbol, interval),
+                EMA(self._store, symbol, interval),
+                ATR(self._store, symbol, interval),
             )
         return self._inds[symbol]
 

@@ -5,6 +5,7 @@ import logging
 from anyio import sleep_forever
 
 from trading.engine.component import Component
+from trading.registry.algo import AlgoRegistry
 from trading.registry.candle import CandleRegistry
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,9 @@ class CandleAggregator(Component):
     def __init__(self, candle_registry: CandleRegistry) -> None:
         super().__init__(name="candle_aggregator")
         self._registry = candle_registry
-        self._algo_callbacks: list = []  # list[AlgoRegistry] — avoid circular import
+        self._algo_callbacks: list[AlgoRegistry] = []
 
-    def add_algo_registry(self, algo_registry: object) -> None:
+    def add_algo_registry(self, algo_registry: AlgoRegistry) -> None:
         """Register an AlgoRegistry to receive warmup candles during _setup."""
         self._algo_callbacks.append(algo_registry)
 

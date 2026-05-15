@@ -12,7 +12,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType, SignalEvent
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig, AlgoInstance
 from trading.storage.stores.audit import AuditStore
 from trading.storage.stores.chart import ChartStore
 from trading.storage.stores.config import ConfigStore
@@ -31,9 +31,9 @@ async def engine() -> AsyncEngine:  # type: ignore[misc]
 def _build_algos(
     instrument_strategy_map: dict[str, str],
     instrument_types: dict[str, str],
-) -> dict[str, _AlgoInstance]:
+) -> dict[str, AlgoInstance]:
     return {
-        symbol: _AlgoInstance(
+        symbol: AlgoInstance(
             strategy=make_strategy(strategy_id),
             instrument_type=InstrumentType(
                 instrument_types.get(symbol, InstrumentType.EQUITY.value)

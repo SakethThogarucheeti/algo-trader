@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from dishka import Provider, Scope, provide
+from dishka import Provider, Scope, provide  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.broker.base.broker import Broker
@@ -21,7 +21,7 @@ from trading.engine.scheduler import Scheduler
 from trading.execution.executor import OrderExecutor
 from trading.indicators.context import IndicatorContext
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
+from trading.registry.algo import AlgoInstance, AlgoRegistry, AlgoRunConfig
 from trading.registry.candle import CandleConfig, CandleRegistry
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -179,8 +179,8 @@ class ComponentProvider(Provider):
         for algo in algo_configs:
             intervals = algo.candle_intervals or settings.candle_intervals
 
-            algo_instances: dict[str, _AlgoInstance] = {
-                s: _AlgoInstance(
+            algo_instances: dict[str, AlgoInstance] = {
+                s: AlgoInstance(
                     strategy=make_strategy(algo.strategy_id),
                     instrument_type=InstrumentType(
                         instrument_type_map.get(s, InstrumentType.EQUITY.value)

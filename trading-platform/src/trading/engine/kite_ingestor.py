@@ -10,6 +10,7 @@ from anyio import sleep_forever
 
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.paper_broker import AbstractPriceStore
+from trading.broker.types import Tick
 from trading.core.context import thread_id
 from trading.core.schemas import TickEvent
 from trading.engine.component import Component
@@ -101,7 +102,7 @@ class KiteIngestor(Component):
             self._connected.set()
         self._tick_registry.on_connected()
 
-    def _on_ws_ticks(self, ticks: list[dict]) -> None:
+    def _on_ws_ticks(self, ticks: list[Tick]) -> None:
         if self._loop is None:
             return
         for tick in ticks:
@@ -112,7 +113,7 @@ class KiteIngestor(Component):
         assert self._loop is not None
         self._loop.call_soon_threadsafe(self._tick_registry.on_disconnected)
 
-    async def _handle_tick(self, raw: dict) -> None:
+    async def _handle_tick(self, raw: Tick) -> None:
         thread_id.set(os.urandom(4).hex())
 
         tick = await self._tick_registry.handle(raw)

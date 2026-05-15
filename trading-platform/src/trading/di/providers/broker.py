@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from dishka import Provider, Scope, provide
+from dishka import Provider, Scope, provide  # type: ignore[import-untyped]
 
 from trading.broker.base.broker import Broker
 from trading.broker.base.broker_stream import BrokerStream

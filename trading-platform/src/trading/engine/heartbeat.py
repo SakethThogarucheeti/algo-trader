@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Awaitable
 
 from anyio import create_task_group, sleep
 from sqlalchemy import delete
@@ -35,7 +37,7 @@ class HeartbeatMonitor(Component):
         component_names: list[str],
         beat_interval_secs: int = 5,
         timeout_secs: int = 15,
-        alerter=None,  # Callable[[str], Awaitable[None]] | None
+        alerter: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__(name="heartbeat_monitor")
         self._heartbeat = heartbeat

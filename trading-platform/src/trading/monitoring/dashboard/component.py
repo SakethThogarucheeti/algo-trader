@@ -51,7 +51,7 @@ class DashboardServer(Component):
         )
         config.load()
         # Allow immediate rebind after restart — avoids "port in use" on TIME_WAIT
-        config.socket_options = [(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)]
+        config.socket_options = [(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)]  # type: ignore[attr-defined]
         self._server = uvicorn.Server(config)
         logger.info("DashboardServer: ready on http://%s:%d", self._host, self._port)
 

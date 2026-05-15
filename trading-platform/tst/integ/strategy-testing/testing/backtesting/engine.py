@@ -30,7 +30,7 @@ from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType
 from trading.di.providers.strategy import make_strategy
 from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRegistry, AlgoRunConfig, _AlgoInstance
+from trading.registry.algo import AlgoRegistry, AlgoRunConfig, AlgoInstance
 from trading.registry.candle import _SymbolConfig
 from trading.registry.exec import ExecConfig, ExecRegistry
 from trading.registry.risk import RiskConfig, RiskRegistry
@@ -139,8 +139,8 @@ class BacktestSession(TestingSession):
             # ------------------------------------------------------------------
             # 5. Build the direct pipeline: AlgoRegistry → RiskRegistry → ExecRegistry
             # ------------------------------------------------------------------
-            algo_instances: dict[str, _AlgoInstance] = {
-                s: _AlgoInstance(
+            algo_instances: dict[str, AlgoInstance] = {
+                s: AlgoInstance(
                     strategy=make_strategy(
                         algo.strategy_id, config.strategy_params or None, clock=sim_clock
                     ),

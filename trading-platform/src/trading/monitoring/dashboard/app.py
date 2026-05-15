@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
@@ -106,7 +106,7 @@ def build_app(
         now = clock.now()
         stale_threshold = 30
 
-        rows = []
+        rows: list[dict[str, object]] = []
         for hb in heartbeats:
             last_seen = hb.last_seen
             if last_seen.tzinfo is None:
@@ -304,7 +304,7 @@ def build_app(
             algo_names = [r[0] for r in result.fetchall()]
 
         # For each algo, get chart names then fetch each chart's series
-        combined: dict[str, dict[str, list[dict]]] = {}
+        combined: dict[str, dict[str, list[dict[str, object]]]] = {}
         for algo_name in algo_names:
             chart_names = await chart_store.get_chart_names(algo_name, since, sid)
             for chart_name in chart_names:
@@ -377,7 +377,7 @@ def build_app(
 # ---------------------------------------------------------------------------
 
 
-def _session_filter(model: type[DecisionLog], session_id: str) -> object:
+def _session_filter(model: type[DecisionLog], session_id: str) -> ColumnElement[bool]:
     if session_id:
         return model.session_id == session_id
     return model.session_id.is_(None)

@@ -19,15 +19,15 @@ class AlgoRunner(Component):
     """
 
     def __init__(self, algo_registry: AlgoRegistry) -> None:
-        name = f"algo_runner[{algo_registry._config.algo_name}]"
+        name = f"algo_runner[{algo_registry.config.algo_name}]"
         super().__init__(name=name)
         self._registry = algo_registry
 
     async def _setup(self) -> None:
         logger.info(
             "AlgoRunner[%s]: ready with %d instruments",
-            self._registry._config.algo_name,
-            len(self._registry._algos),
+            self._registry.config.algo_name,
+            len(self._registry.algos),
         )
 
     async def _run(self) -> None:

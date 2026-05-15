@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from dishka import Provider, Scope, provide
+from dishka import Provider, Scope, provide  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from trading.broker.paper_broker import AbstractPriceStore, PriceStore

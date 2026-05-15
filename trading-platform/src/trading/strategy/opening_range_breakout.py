@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 import math
 from datetime import time
-from typing import Any
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
 from trading.indicators.library.atr import ATR
+from trading.indicators.store import AbstractCandleStore
 from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._atr_multiplier = atr_multiplier
         self._interval_minutes = interval_minutes
         self._clock = clock
-        self._store: Any = None
+        self._store: AbstractCandleStore | None = None
         # indicator cache: symbol → atr
         self._inds: dict[str, ATR] = {}
         # (session_date, or_high, or_low, signal_taken)
@@ -54,11 +54,12 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._last_or_high: float | None = None
         self._last_or_low: float | None = None
 
-    def set_store(self, store: Any) -> None:
+    def set_store(self, store: AbstractCandleStore) -> None:
         self._store = store
 
     def _get_atr(self, symbol: str, interval: str) -> ATR:
         if symbol not in self._inds:
+            assert self._store is not None, "set_store() must be called before on_candle()"
             self._inds[symbol] = ATR(self._store, symbol, interval)
         return self._inds[symbol]
 
@@ -101,7 +102,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
             self._state[symbol] = (cur_date, -math.inf, math.inf, False)
             state = self._state[symbol]
 
-        session_date, or_high, or_low, signal_taken = state
+        _, or_high, or_low, signal_taken = state
 
         if cur_ist < or_end_ist:
             new_high = max(or_high, candle.high)
