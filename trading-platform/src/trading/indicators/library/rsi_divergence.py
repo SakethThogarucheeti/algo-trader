@@ -10,7 +10,7 @@ from pydantic import Field
 from trading.indicators.base import Indicator, IndicatorParameters
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 _LOOKBACK = 3
 
@@ -59,7 +59,7 @@ class RSIDivergence(Indicator):
 
     alias = "rsi_divergence"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]

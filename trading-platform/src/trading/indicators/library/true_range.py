@@ -9,7 +9,7 @@ import numpy as np
 from trading.indicators.base import Indicator, IndicatorParameters
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 
 def true_range(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> np.ndarray:
@@ -43,7 +43,7 @@ class TrueRange(Indicator):
 
     alias = "true_range"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]

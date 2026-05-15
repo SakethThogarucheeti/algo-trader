@@ -12,7 +12,7 @@ from trading.indicators.library.true_range import true_range
 from trading.indicators.library.wilder_ema import wilder_ema
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 _LOOKBACK_FACTOR = 3
 
@@ -36,7 +36,7 @@ class Supertrend(Indicator):
 
     alias = "supertrend"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]

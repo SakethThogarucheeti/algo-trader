@@ -11,7 +11,7 @@ from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.indicators.base import Indicator, IndicatorParameters
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 _SESSION_OPEN = time(9, 15)
 
@@ -32,7 +32,7 @@ class SessionHighLowPct(Indicator):
     alias = "session_hl_pct"
 
     def __init__(
-        self, store: CandleStore, symbol: str, interval: str, clock: Clock = SYSTEM_CLOCK
+        self, store: AbstractCandleStore, symbol: str, interval: str, clock: Clock = SYSTEM_CLOCK
     ) -> None:
         super().__init__(store, symbol, interval)
         self._clock = clock

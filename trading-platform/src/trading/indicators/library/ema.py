@@ -11,7 +11,7 @@ from trading.indicators.base import Indicator, IndicatorParameters
 from trading.indicators.library.wilder_ema import wilder_ema
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 # Fetch 3× the period so the EWM seed bias has decayed to negligible levels
 # before the value we return. This matches the warmup approach used by the
@@ -34,7 +34,7 @@ class EMA(Indicator):
 
     alias = "ema"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]

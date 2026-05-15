@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from pydantic import Field
-from scipy.signal import lfilter
+from scipy.signal import lfilter  # type: ignore[import-untyped]
 
 from trading.indicators.base import Indicator, IndicatorParameters
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 _LOOKBACK_FACTOR = 3
 
@@ -47,7 +47,7 @@ class WilderEMA(Indicator):
 
     alias = "wilder_ema"
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         super().__init__(store, symbol, interval)
 
     async def compute(self, params: Parameters) -> float | None:  # type: ignore[override]
