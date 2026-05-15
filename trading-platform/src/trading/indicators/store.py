@@ -4,20 +4,42 @@ from __future__ import annotations
 
 import json
 import logging
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.indicators.types import CandleRow
 from trading.storage.stores.candle import CandleDataStore
 
 _log = logging.getLogger(__name__)
+
+
+class AbstractCandleStore(ABC):
+    """Common interface for all candle data sources (Postgres-backed or in-memory)."""
+
+    @abstractmethod
+    async def fetch(self, symbol: str, interval: str, limit: int) -> list[CandleRow]:
+        """Return the last *limit* candles ordered ts ASC (oldest→newest)."""
+
+    @abstractmethod
+    async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[CandleRow]:
+        """Return all candles with ts >= *since*, ordered ts ASC."""
+
+
+@runtime_checkable
+class RedisClientProtocol(Protocol):
+    async def get(self, key: str) -> bytes | None: ...
+    async def setex(self, key: str, ttl: int, value: str) -> None: ...
 
 # Redis TTL for cached candle lists (seconds). One bar is typically 1–15 min,
 # so 90 s ensures the cache expires well within the next bar.
 _CACHE_TTL = 90
 
 
-class CandleStore:
+class CandleStore(AbstractCandleStore):
     """
     Fetch candle rows from Postgres for indicator computation.
 
@@ -33,7 +55,7 @@ class CandleStore:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         candle_store: CandleDataStore,
-        redis: object | None = None,
+        redis: RedisClientProtocol | None = None,
     ) -> None:
         self._sf = session_factory
         self._candle = candle_store
@@ -43,7 +65,7 @@ class CandleStore:
     # Public API
     # ------------------------------------------------------------------
 
-    async def fetch(self, symbol: str, interval: str, limit: int) -> list[dict]:
+    async def fetch(self, symbol: str, interval: str, limit: int) -> list[CandleRow]:
         """Return the last *limit* candles ordered ts ASC (oldest→newest)."""
         cache_key = f"cs:candles:{symbol}:{interval}:n{limit}"
         return await self._get_or_fetch(
@@ -51,7 +73,7 @@ class CandleStore:
             lambda: self._candle.get_candles(symbol, interval, limit),
         )
 
-    async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[dict]:
+    async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[CandleRow]:
         """Return all candles with ts >= *since*, ordered ts ASC."""
         cache_key = f"cs:candles:{symbol}:{interval}:since:{since.isoformat()}"
         return await self._get_or_fetch(
@@ -63,16 +85,22 @@ class CandleStore:
     # Internal
     # ------------------------------------------------------------------
 
-    async def _get_or_fetch(self, key: str, query) -> list[dict]:
+    async def _get_or_fetch(
+        self,
+        key: str,
+        query: Callable[[], Coroutine[Any, Any, list[CandleRow]]],
+    ) -> list[CandleRow]:
         if self._redis is not None:
             try:
                 cached = await self._redis.get(key)
                 if cached is not None:
-                    return json.loads(cached)
+                    # json.loads returns Any — the shape matches CandleRow at
+                    # runtime but can't be verified statically without a schema validator.
+                    return json.loads(cached)  # type: ignore[no-any-return]
             except Exception as exc:
                 _log.debug("CandleStore: Redis get failed for %r — %s", key, exc)
 
-        rows = await query()
+        rows: list[CandleRow] = await query()
 
         if self._redis is not None and rows:
             try:

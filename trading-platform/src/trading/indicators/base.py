@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
-    from trading.indicators.store import CandleStore
+    from trading.indicators.store import AbstractCandleStore
 
 _log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class Indicator(ABC):
             )
         _REGISTRY[alias] = cls
 
-    def __init__(self, store: CandleStore, symbol: str, interval: str) -> None:
+    def __init__(self, store: AbstractCandleStore, symbol: str, interval: str) -> None:
         self._store = store
         self._symbol = symbol
         self._interval = interval

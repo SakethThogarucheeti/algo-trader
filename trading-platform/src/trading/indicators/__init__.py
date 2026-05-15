@@ -69,11 +69,12 @@ from trading.indicators.library.vwap import VWAP
 from trading.indicators.library.vwma import VWMA
 from trading.indicators.library.wilder_ema import WilderEMA
 from trading.indicators.library.williams_r import WilliamsR
-from trading.indicators.store import CandleStore
+from trading.indicators.store import AbstractCandleStore, CandleStore
 
 __all__ = [
     "Indicator",
     "IndicatorContext",
+    "AbstractCandleStore",
     "CandleStore",
     # Original
     "EMA",

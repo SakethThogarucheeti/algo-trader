@@ -10,8 +10,11 @@ from __future__ import annotations
 from collections import deque
 from datetime import datetime
 
+from trading.indicators.store import AbstractCandleStore
+from trading.indicators.types import CandleRow
 
-class PolarsStore:
+
+class PolarsStore(AbstractCandleStore):
     """
     In-memory candle store.  Feed bars in with push(); indicators call
     fetch() / fetch_since() identically to the Postgres-backed CandleStore.
@@ -24,10 +27,10 @@ class PolarsStore:
 
     def __init__(self, maxlen: int = 500) -> None:
         # (symbol, interval) → deque of candle dicts (oldest first)
-        self._buffers: dict[tuple[str, str], deque[dict]] = {}
+        self._buffers: dict[tuple[str, str], deque[CandleRow]] = {}
         self._maxlen = maxlen
 
-    def push(self, symbol: str, interval: str, row: dict) -> None:
+    def push(self, symbol: str, interval: str, row: CandleRow) -> None:
         """Append a candle row dict to the rolling buffer."""
         key = (symbol, interval)
         if key not in self._buffers:
@@ -38,14 +41,14 @@ class PolarsStore:
     # CandleStore-compatible async interface
     # ------------------------------------------------------------------
 
-    async def fetch(self, symbol: str, interval: str, limit: int) -> list[dict]:
+    async def fetch(self, symbol: str, interval: str, limit: int) -> list[CandleRow]:
         """Return the last *limit* candles ordered ts ASC (oldest→newest)."""
         buf = self._buffers.get((symbol, interval))
         if not buf:
             return []
         return list(buf)[-limit:]
 
-    async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[dict]:
+    async def fetch_since(self, symbol: str, interval: str, since: datetime) -> list[CandleRow]:
         """Return all candles with ts >= *since*, ordered ts ASC."""
         buf = self._buffers.get((symbol, interval))
         if not buf:

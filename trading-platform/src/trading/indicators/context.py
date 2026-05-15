@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from trading.indicators.store import AbstractCandleStore
 
 
 class IndicatorContext:
@@ -15,8 +15,8 @@ class IndicatorContext:
     interval in its __init__).
     """
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: AbstractCandleStore) -> None:
         self._store = store
 
-    def get_store(self) -> Any:
+    def get_store(self) -> AbstractCandleStore:
         return self._store
