@@ -54,3 +54,30 @@ def test_simulated_clock_advance_multiple_times() -> None:
 def test_system_clock_singleton_is_clock_instance() -> None:
     assert isinstance(SYSTEM_CLOCK, Clock)
     assert isinstance(SYSTEM_CLOCK, SystemClock)
+
+
+def test_simulated_clock_now_tz_before_advance_does_not_crash() -> None:
+    """Covers line 59: SimulatedClock.now_tz() before advance returns datetime.min equivalent."""
+    sc = SimulatedClock()
+    result = sc.now_tz()
+    # The clock returns datetime.min (UTC) before any advance() call
+    assert result == datetime.min.replace(tzinfo=UTC)
+
+
+def test_system_clock_tz_loads_from_settings_when_timezone_is_none() -> None:
+    """Covers the else branch (line 104-106): SystemClock.tz lazy-loads from settings when _timezone is None."""
+    from zoneinfo import ZoneInfo
+
+    clock = SystemClock(timezone=None)
+    tz = clock.tz
+    assert isinstance(tz, ZoneInfo)
+
+
+def test_system_clock_tz_uses_provided_timezone_string() -> None:
+    """Covers line 102: SystemClock.tz uses ZoneInfo(_timezone) when _timezone is set."""
+    from zoneinfo import ZoneInfo
+
+    clock = SystemClock(timezone="Asia/Kolkata")
+    tz = clock.tz
+    assert isinstance(tz, ZoneInfo)
+    assert str(tz) == "Asia/Kolkata"

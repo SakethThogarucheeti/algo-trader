@@ -105,3 +105,26 @@ async def test_paper_broker_place_order_unique_ids() -> None:
     id1 = await pb.place_order("INFY", Side.BUY, 10, OrderType.MARKET)
     id2 = await pb.place_order("INFY", Side.BUY, 10, OrderType.MARKET)
     assert id1 != id2
+
+
+def test_price_store_fill_price_returns_none_when_no_price_set() -> None:
+    """Covers lines 71-76: fill_price() returns None when get() returns None."""
+    ps = PriceStore()
+    result = ps.fill_price("INFY", Side.BUY)
+    assert result is None
+
+
+def test_price_store_fill_price_buy_adds_slippage() -> None:
+    ps = PriceStore(slippage_pct=0.001)
+    ps.update("INFY", 1000.0)
+    result = ps.fill_price("INFY", Side.BUY)
+    assert result is not None
+    assert result > 1000.0
+
+
+def test_price_store_fill_price_sell_subtracts_slippage() -> None:
+    ps = PriceStore(slippage_pct=0.001)
+    ps.update("INFY", 1000.0)
+    result = ps.fill_price("INFY", Side.SELL)
+    assert result is not None
+    assert result < 1000.0

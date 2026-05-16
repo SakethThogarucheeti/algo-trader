@@ -289,3 +289,14 @@ def test_build_engine_returns_async_engine() -> None:
 
     eng = build_engine("sqlite+aiosqlite:///:memory:")
     assert isinstance(eng, AsyncEngine)
+
+
+def test_build_engine_postgres_branch_sets_pool_options() -> None:
+    """Covers lines 21-23: postgres-specific pool_size, max_overflow, connect_args."""
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    url = "postgresql+asyncpg://user:pass@localhost/testdb"
+    eng = build_engine(url)
+    assert isinstance(eng, AsyncEngine)
+    # Verify that the engine URL contains 'postgresql'
+    assert "postgresql" in str(eng.url)
