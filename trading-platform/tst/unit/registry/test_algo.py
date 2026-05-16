@@ -285,6 +285,72 @@ async def test_log_signal_with_nonzero_tick_log_id(engine: AsyncEngine) -> None:
     await reg._log_signal(signal_event, "test_algo")
 
 
+async def test_log_signal_audit_failure_is_swallowed() -> None:
+    """Covers line 207: _log_signal exception handler when audit.log_decision raises."""
+    from unittest.mock import AsyncMock
+
+    from trading.core.schemas import Side, SignalType
+    from trading.storage.stores.audit import AbstractAuditStore
+
+    class _FailingAuditStore(AbstractAuditStore):
+        async def log_tick(self, event, symbol):
+            return 1
+
+        async def log_decision(self, **kwargs):
+            raise RuntimeError("audit DB down in _log_signal")
+
+        async def log_audit(self, module, level, message):
+            pass
+
+    mock_chart = AsyncMock()
+    mock_config_store = AsyncMock()
+
+    from trading.indicators.polars_store import PolarsStore
+    from trading.registry.algo import AlgoRegistry, AlgoRunConfig
+
+    config = AlgoRunConfig(
+        instrument_strategy_map={"INFY": "ema_crossover"},
+        algo_name="fail_audit_test",
+    )
+    reg = AlgoRegistry(
+        config=config,
+        chart=mock_chart,
+        config_store=mock_config_store,
+        audit=_FailingAuditStore(),
+        algos={},
+        store=PolarsStore(),
+    )
+
+    signal_event = SignalEvent(
+        symbol="INFY",
+        instrument_type=InstrumentType.EQUITY,
+        side=Side.BUY,
+        strategy_id="ema_crossover",
+        signal_type=SignalType.ENTRY,
+        stop_distance=10.0,
+        tick_log_id=99,
+    )
+    # Should not raise — exception is logged and swallowed
+    await reg._log_signal(signal_event, "fail_audit_test")
+
+
+# ---------------------------------------------------------------------------
+# set_indicator_context — covers line 81
+# ---------------------------------------------------------------------------
+
+
+def test_set_indicator_context_replaces_context(engine: AsyncEngine) -> None:
+    """Covers line 81: set_indicator_context() stores the new context."""
+    from trading.indicators.context import IndicatorContext
+    from trading.indicators.polars_store import PolarsStore
+
+    reg = make_registry(engine)
+    new_store = PolarsStore()
+    new_ctx = IndicatorContext(new_store)
+    reg.set_indicator_context(new_ctx)
+    assert reg._indicator_context is new_ctx
+
+
 # ---------------------------------------------------------------------------
 # AlgoConfig defaults
 # ---------------------------------------------------------------------------

@@ -351,6 +351,87 @@ async def test_ingestor_handle_tick_unknown_token_returns_none(engine: AsyncEngi
     await asyncio.gather(task, return_exceptions=True)
 
 
+async def test_tick_registry_db_persist_failure_returns_tick_with_minus_one_id(
+    engine: AsyncEngine,
+) -> None:
+    """Covers lines 121-123: audit.log_tick() raises → tick_log_id set to -1 but TickEvent returned."""
+    from unittest.mock import AsyncMock
+
+    from trading.storage.stores.audit import AbstractAuditStore
+
+    class _FailingAuditStore(AbstractAuditStore):
+        async def log_tick(self, tick, symbol: str) -> int:
+            raise RuntimeError("DB unavailable")
+
+        async def log_decision(self, **kwargs) -> None:
+            pass
+
+        async def log_audit(self, module, level, message) -> None:
+            pass
+
+    stream = MockBrokerStream()
+    instruments = make_instruments(1)
+    config = TickConfig(instruments=instruments, exec_id="paper")
+    reg = TickRegistry(config=config, stream=stream, audit=_FailingAuditStore())
+
+    result = await reg.handle(make_raw_tick(token=1, price=100.0))
+    assert result is not None
+    assert result.tick_log_id == -1
+
+
+async def test_ingestor_on_tick_callback_exception_is_swallowed(engine: AsyncEngine) -> None:
+    """Covers lines 130-133: on_tick callback that raises is caught and doesn't crash."""
+    stream = MockBrokerStream()
+    reg = make_tick_registry(stream, engine, 1)
+
+    calls: list[str] = []
+
+    async def _failing_callback(tick) -> None:
+        calls.append("called")
+        raise RuntimeError("callback error")
+
+    ingestor = KiteIngestor(stream=stream, tick_registry=reg)
+    ingestor.add_on_tick(_failing_callback)
+
+    task = asyncio.get_event_loop().create_task(ingestor.start())
+    await asyncio.sleep(0.05)
+
+    stream.fire_ticks([make_raw_tick(token=1, price=100.0)])
+    await asyncio.sleep(0.05)
+
+    # Callback should have been called, exception should be swallowed
+    assert "called" in calls
+
+    await ingestor.stop()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_ingestor_on_ws_ticks_no_op_when_loop_is_none(engine: AsyncEngine) -> None:
+    """Covers line 107: _on_ws_ticks returns early when _loop is None."""
+    stream = MockBrokerStream()
+    reg = make_tick_registry(stream, engine, 1)
+    ingestor = KiteIngestor(stream=stream, tick_registry=reg)
+
+    # _loop is None before _setup() is called — fire_ticks should be a no-op
+    stream.fire_ticks([make_raw_tick(token=1, price=100.0)])
+    # No crash — returns early at the `if self._loop is None: return` check
+
+
+async def test_ingestor_connect_timeout_raises_runtime_error(engine: AsyncEngine) -> None:
+    """Covers lines 73-74: TimeoutError in _setup() is re-raised as RuntimeError."""
+
+    class _NeverConnectsStream(MockBrokerStream):
+        async def connect(self) -> None:
+            pass  # Never fires on_connect
+
+    stream = _NeverConnectsStream()
+    reg = make_tick_registry(stream, engine, 1)
+    ingestor = KiteIngestor(stream=stream, tick_registry=reg, connect_timeout_secs=0.05)
+
+    with pytest.raises(RuntimeError, match="did not connect within"):
+        await ingestor._setup()
+
+
 async def test_ingestor_updates_price_store_on_valid_tick(engine: AsyncEngine) -> None:
     """Covers lines 105-107: price_store is updated when tick is valid."""
 

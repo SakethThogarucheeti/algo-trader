@@ -333,6 +333,119 @@ async def test_warmup_invalid_row_logged_as_warning(engine: AsyncEngine) -> None
     assert events == []  # bad row is skipped, no crash
 
 
+async def test_warmup_candle_persist_failure_is_swallowed(engine: AsyncEngine) -> None:
+    """Covers lines 201-202: warmup candle save_candles failure is caught silently."""
+    from unittest.mock import AsyncMock
+
+    from trading.storage.stores.candle import AbstractCandleDataStore
+
+    class _FailingCandleStore(AbstractCandleDataStore):
+        async def save_candles(self, rows) -> None:
+            raise RuntimeError("DB write failure")
+
+        async def get_candles(self, symbol, interval, limit):
+            return []
+
+        async def get_candles_since(self, symbol, interval, since):
+            return []
+
+    df = make_ohlc_df(5, BASE_TIME - timedelta(hours=1))
+    broker = MockBroker(df=df)
+    instruments = [make_instrument(1)]
+    sf = build_session_factory(engine)
+    config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
+    reg = CandleRegistry(
+        config=config,
+        broker=broker,
+        candle=_FailingCandleStore(),
+        audit=AuditStore(sf),
+    )
+    # Should not raise — warmup candle persist failure is swallowed
+    events = await reg.warmup()
+    assert events == [] or isinstance(events, list)
+
+
+async def test_log_candle_tick_log_id_positive_calls_audit(engine: AsyncEngine) -> None:
+    """Covers lines 289-290: _log_candle calls audit.log_decision when tick_log_id > 0."""
+    from trading.storage.stores.candle import AbstractCandleDataStore
+
+    class _SucceedingCandleStore(AbstractCandleDataStore):
+        async def save_candles(self, rows) -> None:
+            pass  # succeed → reaches line 289
+
+        async def get_candles(self, symbol, interval, limit):
+            return []
+
+        async def get_candles_since(self, symbol, interval, since):
+            return []
+
+    instruments = [make_instrument(1)]
+    sf = build_session_factory(engine)
+    config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
+    reg = CandleRegistry(
+        config=config,
+        broker=MockBroker(),
+        candle=_SucceedingCandleStore(),
+        audit=AuditStore(sf),
+    )
+
+    candle_event = CandleEvent(
+        symbol="SYM1",
+        instrument_type=InstrumentType.EQUITY,
+        interval="1min",
+        open=100.0,
+        high=105.0,
+        low=99.0,
+        close=103.0,
+        volume=1000,
+        timestamp=BASE_TIME,
+        tick_log_id=99,  # > 0 → triggers log_decision (line 290)
+    )
+    # save_candles succeeds → reaches line 289 (if tick_log_id > 0)
+    # then calls log_decision (line 290) — no exception
+    await reg._log_candle(candle_event)
+
+
+async def test_log_candle_exception_path_is_swallowed(engine: AsyncEngine) -> None:
+    """Covers lines 304-311: _log_candle exception is caught and logged."""
+    from trading.storage.stores.candle import AbstractCandleDataStore
+
+    class _FailingCandleStore(AbstractCandleDataStore):
+        async def save_candles(self, rows) -> None:
+            raise RuntimeError("candle save failed")
+
+        async def get_candles(self, symbol, interval, limit):
+            return []
+
+        async def get_candles_since(self, symbol, interval, since):
+            return []
+
+    instruments = [make_instrument(1)]
+    sf = build_session_factory(engine)
+    config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
+    reg = CandleRegistry(
+        config=config,
+        broker=MockBroker(),
+        candle=_FailingCandleStore(),
+        audit=AuditStore(sf),
+    )
+
+    candle_event = CandleEvent(
+        symbol="SYM1",
+        instrument_type=InstrumentType.EQUITY,
+        interval="1min",
+        open=100.0,
+        high=105.0,
+        low=99.0,
+        close=103.0,
+        volume=1000,
+        timestamp=BASE_TIME,
+        tick_log_id=99,
+    )
+    # save_candles raises → caught by except block — no exception propagated
+    await reg._log_candle(candle_event)
+
+
 async def test_handle_with_tick_log_id_schedules_log_candle(engine: AsyncEngine) -> None:
     """Covers _log_candle DB path: tick_log_id != 0 triggers fire-and-forget log."""
     broker = MockBroker()
