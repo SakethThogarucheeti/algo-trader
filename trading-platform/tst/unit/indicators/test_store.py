@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from trading.indicators.polars_store import PolarsStore
 from trading.indicators.store import CandleStore
 from trading.storage.stores.candle import CandleDataStore
 
@@ -85,6 +86,28 @@ async def test_redis_setex_error_is_swallowed() -> None:
 # ---------------------------------------------------------------------------
 # Postgres round-trip tests (require testcontainers)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# PolarsStore — empty buffer paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_polars_store_fetch_returns_empty_for_unknown_symbol() -> None:
+    """Covers line 48: fetch() returns [] when buffer is empty for symbol."""
+    store = PolarsStore()
+    result = await store.fetch("UNKNOWN_SYM", "1min", 100)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_polars_store_fetch_since_returns_empty_for_unknown_symbol() -> None:
+    """Covers line 55: fetch_since() returns [] when buffer is empty for symbol."""
+    store = PolarsStore()
+    since = datetime(2025, 1, 1, tzinfo=UTC)
+    result = await store.fetch_since("UNKNOWN_SYM", "1min", since)
+    assert result == []
 
 
 @pytest.fixture(scope="session")

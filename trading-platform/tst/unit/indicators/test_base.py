@@ -68,3 +68,21 @@ def test_empty_alias_raises() -> None:
             alias = ""
 
             async def compute(self, params): ...  # type: ignore[override]
+
+
+def test_lookup_raises_for_unknown_alias() -> None:
+    """Covers lines 80-84: Indicator.lookup() raises ValueError for unknown alias."""
+    import trading.indicators  # noqa: F401 — ensure registry is populated
+
+    with pytest.raises(ValueError, match="Unknown Indicator alias"):
+        Indicator.lookup("this_does_not_exist_xyz")
+
+
+def test_registered_returns_dict_with_known_aliases() -> None:
+    """Covers line 90: Indicator.registered() returns a dict with known aliases."""
+    import trading.indicators  # noqa: F401
+
+    reg = Indicator.registered()
+    assert isinstance(reg, dict)
+    assert "ema" in reg
+    assert "rsi" in reg

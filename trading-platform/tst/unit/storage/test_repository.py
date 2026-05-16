@@ -21,6 +21,7 @@ from trading.core.schemas import (
     SignalType,
 )
 from trading.storage.stores.audit import AuditStore
+from trading.storage.stores.chart import ChartStore
 from trading.storage.stores.config import ConfigStore
 from trading.storage.stores.heartbeat import HeartbeatStore
 from trading.storage.stores.instrument import InstrumentStore
@@ -443,6 +444,94 @@ async def test_upsert_algo_state_insert_then_update(
         state = await s.get(AlgoStateModel, "my:INFY")
     assert state is not None
     assert json.loads(state.state)["bars_seen"] == 42
+
+
+@pytest.fixture
+def chart_store(engine: AsyncEngine) -> ChartStore:
+    return ChartStore(build_session_factory(engine))
+
+
+# ---------------------------------------------------------------------------
+# ChartStore
+# ---------------------------------------------------------------------------
+
+
+async def test_chart_store_get_chart_names_returns_logged_chart(
+    engine: AsyncEngine, chart_store: ChartStore
+) -> None:
+    """Covers lines 81-94: get_chart_names() returns chart names after log_indicator()."""
+    ts = datetime.now(UTC)
+    await chart_store.log_indicator(
+        algo_name="algo1",
+        symbol="INFY",
+        interval="1min",
+        chart="price",
+        series="vwap",
+        ts=ts,
+        value=1500.0,
+        session_id=None,
+    )
+    since = ts - timedelta(seconds=1)
+    names = await chart_store.get_chart_names("algo1", since, session_id=None)
+    assert "price" in names
+
+
+async def test_chart_store_get_indicator_series_returns_both_series(
+    engine: AsyncEngine, chart_store: ChartStore
+) -> None:
+    """Covers lines 104-124: get_indicator_series() returns dict of series."""
+    ts1 = datetime.now(UTC)
+    ts2 = ts1 + timedelta(seconds=1)
+    await chart_store.log_indicator(
+        algo_name="algo2", symbol="INFY", interval="1min",
+        chart="oscillators", series="rsi", ts=ts1, value=55.0, session_id=None,
+    )
+    await chart_store.log_indicator(
+        algo_name="algo2", symbol="INFY", interval="1min",
+        chart="oscillators", series="macd", ts=ts2, value=1.2, session_id=None,
+    )
+    since = ts1 - timedelta(seconds=1)
+    result = await chart_store.get_indicator_series("algo2", "oscillators", since, session_id=None)
+    assert "rsi" in result
+    assert "macd" in result
+    assert result["rsi"][0]["value"] == 55.0
+    assert result["macd"][0]["value"] == 1.2
+
+
+async def test_chart_store_get_indicator_series_filters_by_session_id(
+    engine: AsyncEngine, chart_store: ChartStore
+) -> None:
+    """Covers session_id filtering in get_indicator_series()."""
+    ts = datetime.now(UTC)
+    await chart_store.log_indicator(
+        algo_name="algo3", symbol="TCS", interval="5min",
+        chart="price", series="ema", ts=ts, value=3000.0, session_id="sess-A",
+    )
+    await chart_store.log_indicator(
+        algo_name="algo3", symbol="TCS", interval="5min",
+        chart="price", series="ema", ts=ts, value=3001.0, session_id="sess-B",
+    )
+    since = ts - timedelta(seconds=1)
+    result_a = await chart_store.get_indicator_series("algo3", "price", since, session_id="sess-A")
+    result_b = await chart_store.get_indicator_series("algo3", "price", since, session_id="sess-B")
+    assert len(result_a.get("ema", [])) == 1
+    assert result_a["ema"][0]["value"] == 3000.0
+    assert result_b["ema"][0]["value"] == 3001.0
+
+
+# ---------------------------------------------------------------------------
+# CandleDataStore — line 45: early return when rows is empty
+# ---------------------------------------------------------------------------
+
+
+async def test_candle_store_save_empty_rows_is_noop(engine: AsyncEngine) -> None:
+    """Covers line 45: save_candles() returns early when rows is empty."""
+    from trading.storage.stores.candle import CandleDataStore
+
+    sf = build_session_factory(engine)
+    store = CandleDataStore(sf)
+    # Should not raise and should be a no-op
+    await store.save_candles([])
 
 
 async def test_get_algo_configs_with_state(engine: AsyncEngine, config_store: ConfigStore) -> None:
