@@ -357,3 +357,139 @@ async def test_reject_direct_covers_audit_log_path(engine: AsyncEngine) -> None:
     reg = make_registry(engine)
     sig = make_signal(tick_log_id=1)
     await reg._reject(sig, "TEST_REASON")  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Lines 130-131: audit log failure in handle() is swallowed
+# ---------------------------------------------------------------------------
+
+
+async def test_audit_log_failure_in_accept_is_swallowed() -> None:
+    """Covers lines 130-131: audit.log_audit raises inside handle() and is swallowed."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from trading.storage.stores.audit import AbstractAuditStore
+
+    class _FailAuditStore(AbstractAuditStore):
+        async def log_tick(self, event, symbol):
+            return 1
+
+        async def log_decision(self, **kwargs):
+            pass
+
+        async def log_audit(self, module, level, message):
+            raise RuntimeError("audit DB down")
+
+    mock_trading = AsyncMock()
+    mock_trading.get_daily_realized_pnl = AsyncMock(return_value=0.0)
+    mock_trading.get_position = AsyncMock(return_value=None)
+    mock_trading.save_signal = AsyncMock()
+
+    reg = RiskRegistry(
+        config=make_config(),
+        circuit=CircuitBreaker(),
+        trading=mock_trading,
+        audit=_FailAuditStore(),
+    )
+    sig = make_signal(tick_log_id=1)
+    # The audit.log_audit failure should be swallowed, result should still return
+    result = await reg.handle(sig)
+    assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Lines 136-137: save_signal failure is caught silently
+# ---------------------------------------------------------------------------
+
+
+async def test_save_signal_failure_is_swallowed() -> None:
+    """Covers lines 136-137: trading.save_signal raises inside handle() and is swallowed."""
+    from unittest.mock import AsyncMock
+
+    from trading.storage.stores.audit import AbstractAuditStore
+
+    class _NoopAuditStore(AbstractAuditStore):
+        async def log_tick(self, event, symbol):
+            return 1
+
+        async def log_decision(self, **kwargs):
+            pass
+
+        async def log_audit(self, module, level, message):
+            pass
+
+    mock_trading = AsyncMock()
+    mock_trading.get_daily_realized_pnl = AsyncMock(return_value=0.0)
+    mock_trading.get_position = AsyncMock(return_value=None)
+    mock_trading.save_signal = AsyncMock(side_effect=RuntimeError("DB down"))
+
+    reg = RiskRegistry(
+        config=make_config(),
+        circuit=CircuitBreaker(),
+        trading=mock_trading,
+        audit=_NoopAuditStore(),
+    )
+    sig = make_signal(tick_log_id=1)
+    # save_signal failure should be swallowed
+    result = await reg.handle(sig)
+    assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Lines 175-176: _reject audit log failure is swallowed silently
+# ---------------------------------------------------------------------------
+
+
+async def test_reject_audit_log_failure_is_swallowed() -> None:
+    """Covers lines 175-176: audit.log_audit raises inside _reject() and is swallowed."""
+    from unittest.mock import AsyncMock
+
+    from trading.storage.stores.audit import AbstractAuditStore
+
+    class _FailAuditStore(AbstractAuditStore):
+        async def log_tick(self, event, symbol):
+            return 1
+
+        async def log_decision(self, **kwargs):
+            pass
+
+        async def log_audit(self, module, level, message):
+            raise RuntimeError("audit DB down in reject")
+
+    mock_trading = AsyncMock()
+
+    reg = RiskRegistry(
+        config=make_config(),
+        circuit=CircuitBreaker(),
+        trading=mock_trading,
+        audit=_FailAuditStore(),
+    )
+    sig = make_signal(tick_log_id=5)
+    # _reject with failing audit store should not raise
+    await reg._reject(sig, "TEST_FAIL_REASON")
+
+
+# ---------------------------------------------------------------------------
+# Lines 175-176: _log_decision when tick_log_id > 0
+# ---------------------------------------------------------------------------
+
+
+async def test_log_decision_writes_when_tick_log_id_positive(engine: AsyncEngine) -> None:
+    """Covers lines 175-176: _log_decision is called with tick_log_id > 0."""
+    from sqlalchemy import select
+
+    from trading.core.database import get_session
+    from trading.core.models import DecisionLog
+
+    reg = make_registry(engine)
+    sig = make_signal(tick_log_id=99)
+    await reg._log_decision("SIGNAL_ACCEPTED", sig, {"qty": 5, "order_type": "MARKET"})
+
+    # Wait briefly for the fire-and-forget task
+    import asyncio
+    await asyncio.sleep(0.05)
+
+    async with get_session(engine) as s:
+        result = await s.execute(select(DecisionLog))
+        logs = result.scalars().all()
+    assert any(log.step == "SIGNAL_ACCEPTED" for log in logs)
