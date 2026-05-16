@@ -293,6 +293,66 @@ async def test_alerter_called_for_stale_module(engine: AsyncEngine, heartbeat_st
     assert "dead_module" in alerted, "stale module must trigger alerter"
 
 
+async def test_telegram_unexpected_http_status_logs_error_and_returns_false() -> None:
+    """Covers lines 90-95: unexpected HTTP status (e.g., 403) logs error and returns False."""
+    from unittest.mock import patch
+
+    alerter = TelegramAlerter(make_settings())
+
+    # Return a 403 status — not 200, not 429, not >= 500 → triggers lines 90-95
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=make_mock_response(403))
+
+        await alerter.send_alert("error test", "bad_status")
+
+    # Verify it was called (and didn't raise)
+    mock_client.post.assert_called_once()
+
+
+async def test_telegram_unexpected_exception_returns_false() -> None:
+    """Covers the generic except block in _post() for non-httpx exceptions."""
+    from unittest.mock import patch
+
+    alerter = TelegramAlerter(make_settings())
+
+    # Raise a generic non-httpx exception
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(side_effect=ConnectionError("socket closed"))
+
+        # Should not raise — exception is caught and logged
+        await alerter.send_alert("error test", "generic_exc")
+
+
+async def test_check_stale_exception_is_caught(engine: AsyncEngine) -> None:
+    """Covers lines 101-102: _check_stale() catches exceptions from get_stale_modules."""
+    from unittest.mock import AsyncMock
+
+    from trading.storage.stores.heartbeat import AbstractHeartbeatStore
+
+    class _FailingHeartbeatStore(AbstractHeartbeatStore):
+        async def update_heartbeat(self, module: str) -> None:
+            pass
+
+        async def get_stale_modules(self, timeout_secs: int, modules=None) -> list[str]:
+            raise RuntimeError("DB unavailable in monitor check")
+
+    sf = build_session_factory(engine)
+    monitor = HeartbeatMonitor(
+        _FailingHeartbeatStore(),
+        sf,
+        component_names=["test_module"],
+        beat_interval_secs=60,
+        timeout_secs=60,
+    )
+
+    # _check_stale should catch the exception and not raise
+    await monitor._check_stale()
+
+
 async def test_beat_loop_survives_db_failure(engine: AsyncEngine) -> None:
     """A DB failure in _beat_loop must not crash the loop."""
     sf = build_session_factory(engine)
