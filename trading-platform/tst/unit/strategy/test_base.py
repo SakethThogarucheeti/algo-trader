@@ -208,3 +208,104 @@ def test_strategy_base_get_state_default() -> None:
 
     strat = _Minimal()
     assert strat.get_state() == {}
+
+
+def test_init_subclass_returns_early_when_no_alias() -> None:
+    """Covers line 57: __init_subclass__ returns early when alias is not in class __dict__."""
+    # Creating a subclass WITHOUT alias in its own __dict__ triggers the `return` at line 57
+    class _NoAlias(Strategy):
+        # No alias defined — should trigger the `return` at line 57
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    # Successfully created — no error
+    assert issubclass(_NoAlias, Strategy)
+
+
+def test_init_subclass_raises_for_empty_alias() -> None:
+    """Covers line 59: __init_subclass__ raises TypeError when alias is empty string."""
+    with pytest.raises(TypeError, match="alias must be a non-empty string"):
+        class _EmptyAlias(Strategy):
+            alias = ""
+
+            async def on_candle(self, symbol, instrument_type, candle):
+                return None
+
+
+def test_get_params_returns_empty_dict() -> None:
+    """Covers line 97: get_params() returns {}."""
+    class _MP(Strategy):
+        alias = "_test_get_params_strategy"
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    strat = _MP()
+    assert strat.get_params() == {}
+
+
+def test_set_chart_callback_stores_callback() -> None:
+    """Covers set_chart_callback() stores the callback."""
+    class _M(Strategy):
+        alias = "_test_chart_cb_strategy"
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    strat = _M()
+    calls: list[tuple] = []
+
+    def _cb(chart: str, series: str, value: float, ts) -> None:
+        calls.append((chart, series, value))
+
+    strat.set_chart_callback(_cb)
+    assert strat._chart_cb is _cb
+
+
+def test_chart_invokes_callback() -> None:
+    """Covers line 59: chart() actually calls the stored callback."""
+    from datetime import UTC, datetime
+
+    class _M2(Strategy):
+        alias = "_test_chart_invoke_strategy"
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    strat = _M2()
+    calls: list[tuple] = []
+
+    def _cb(chart: str, series: str, value: float, ts) -> None:
+        calls.append((chart, series, value, ts))
+
+    strat.set_chart_callback(_cb)
+    ts = datetime(2025, 1, 1, tzinfo=UTC)
+    strat.chart("price", "ema", 1500.0, ts)
+    assert len(calls) == 1
+    assert calls[0] == ("price", "ema", 1500.0, ts)
+
+
+def test_chart_uses_now_when_ts_is_none() -> None:
+    """Covers line 97: chart() uses datetime.now(UTC) when ts is None."""
+    from datetime import UTC, datetime
+
+    class _M3(Strategy):
+        alias = "_test_chart_now_strategy"
+
+        async def on_candle(self, symbol, instrument_type, candle):
+            return None
+
+    strat = _M3()
+    received_ts: list[datetime] = []
+
+    def _cb(chart: str, series: str, value: float, ts) -> None:
+        received_ts.append(ts)
+
+    strat.set_chart_callback(_cb)
+    before = datetime.now(UTC)
+    strat.chart("price", "close", 100.0, None)  # ts=None → uses datetime.now(UTC)
+    after = datetime.now(UTC)
+
+    assert len(received_ts) == 1
+    assert before <= received_ts[0] <= after
