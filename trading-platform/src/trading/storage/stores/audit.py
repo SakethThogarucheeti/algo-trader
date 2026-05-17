@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from uuid import UUID
 
@@ -9,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.models import AuditLog, DecisionLog, TickLog
 from trading.core.schemas import TickEvent
+
+
+@dataclass
+class AuditContext:
+    """Base for all typed audit context objects. Subclass in the owning registry module."""
 
 
 class AbstractAuditStore(ABC):
@@ -21,7 +27,7 @@ class AbstractAuditStore(ABC):
         step: str,
         symbol: str,
         tick_log_id: int,
-        context: dict[str, object],
+        context: AuditContext,
         algo_name: str | None = None,
         signal_id: UUID | None = None,
         session_id: str | None = None,
@@ -62,7 +68,7 @@ class AuditStore(AbstractAuditStore):
         step: str,
         symbol: str,
         tick_log_id: int,
-        context: dict[str, object],
+        context: AuditContext,
         algo_name: str | None = None,
         signal_id: UUID | None = None,
         session_id: str | None = None,
@@ -77,7 +83,7 @@ class AuditStore(AbstractAuditStore):
                         session_id=session_id,
                         symbol=symbol,
                         signal_id=signal_id,
-                        context=json.dumps(context),
+                        context=json.dumps(asdict(context)),
                     )
                 )
 

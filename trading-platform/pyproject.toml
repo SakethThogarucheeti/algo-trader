@@ -29,6 +29,8 @@ dependencies = [
     # Dashboard
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # Indicators library
+    "quantindicators[scipy]",
 ]
 
 [dependency-groups]
@@ -50,7 +52,7 @@ asyncio_mode = "auto"
 testpaths = ["tst/unit"]
 
 [project.scripts]
-build = "trading.ci:main"
+build = "trading.build:main"
 start = "trading.start:main"
 fetch-data = "trading.scripts.fetch_data:main"
 import-candles = "trading.scripts.import_candles:main"
@@ -58,6 +60,9 @@ report = "trading.scripts.report:main"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+quantindicators = { path = "../quantindicators", editable = true }
 
 
 [tool.ruff]

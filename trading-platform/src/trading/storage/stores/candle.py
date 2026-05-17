@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from quantindicators.types import CandleRow
+
 from trading.core.models import Candle
-from trading.indicators.types import CandleRow
 
 
 def _candle_to_dict(c: Candle) -> CandleRow:

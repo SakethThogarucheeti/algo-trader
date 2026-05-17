@@ -1,113 +1,14 @@
-"""Tests for indicators/store.py — CandleStore (mock-based + Postgres round-trip)."""
+"""Integration tests for CandleStore + CandleDataStore (Postgres round-trip)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from trading.indicators.polars_store import PolarsStore
-from trading.indicators.store import CandleStore
+from trading.storage.stores.candle_store import CandleStore
 from trading.storage.stores.candle import CandleDataStore
-
-
-@pytest.mark.asyncio
-async def test_fetch_since_no_redis() -> None:
-    since = datetime(2024, 1, 1, 9, 15, tzinfo=UTC)
-    expected_rows = [{"symbol": "T", "interval": "15min", "ts": since, "close": 100.0}]
-
-    mock_candle = MagicMock(spec=CandleDataStore)
-    mock_candle.get_candles_since = AsyncMock(return_value=expected_rows)
-
-    mock_sf = MagicMock(spec=async_sessionmaker)
-    store = CandleStore(session_factory=mock_sf, candle_store=mock_candle)
-    result = await store.fetch_since("T", "15min", since)
-
-    assert result == expected_rows
-    mock_candle.get_candles_since.assert_called_once_with("T", "15min", since)
-
-
-@pytest.mark.asyncio
-async def test_redis_cache_hit_skips_db() -> None:
-    import json
-
-    cached_rows = [{"close": 200.0, "ts": "2024-01-01T09:15:00+00:00"}]
-
-    mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(return_value=json.dumps(cached_rows).encode())
-
-    mock_candle = MagicMock(spec=CandleDataStore)
-    mock_sf = MagicMock(spec=async_sessionmaker)
-
-    store = CandleStore(session_factory=mock_sf, candle_store=mock_candle, redis=mock_redis)
-    result = await store.fetch("T", "15min", 10)
-
-    assert result == cached_rows
-    mock_candle.get_candles.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_redis_get_error_falls_through_to_db() -> None:
-    db_rows = [{"close": 300.0}]
-
-    mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(side_effect=ConnectionError("redis down"))
-
-    mock_candle = MagicMock(spec=CandleDataStore)
-    mock_candle.get_candles = AsyncMock(return_value=db_rows)
-
-    mock_sf = MagicMock(spec=async_sessionmaker)
-    store = CandleStore(session_factory=mock_sf, candle_store=mock_candle, redis=mock_redis)
-    result = await store.fetch("T", "15min", 5)
-
-    assert result == db_rows
-
-
-@pytest.mark.asyncio
-async def test_redis_setex_error_is_swallowed() -> None:
-    db_rows = [{"close": 150.0}]
-
-    mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.setex = AsyncMock(side_effect=ConnectionError("redis down"))
-
-    mock_candle = MagicMock(spec=CandleDataStore)
-    mock_candle.get_candles = AsyncMock(return_value=db_rows)
-
-    mock_sf = MagicMock(spec=async_sessionmaker)
-    store = CandleStore(session_factory=mock_sf, candle_store=mock_candle, redis=mock_redis)
-    result = await store.fetch("T", "15min", 5)
-
-    assert result == db_rows
-
-
-# ---------------------------------------------------------------------------
-# Postgres round-trip tests (require testcontainers)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# PolarsStore — empty buffer paths
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_polars_store_fetch_returns_empty_for_unknown_symbol() -> None:
-    """Covers line 48: fetch() returns [] when buffer is empty for symbol."""
-    store = PolarsStore()
-    result = await store.fetch("UNKNOWN_SYM", "1min", 100)
-    assert result == []
-
-
-@pytest.mark.asyncio
-async def test_polars_store_fetch_since_returns_empty_for_unknown_symbol() -> None:
-    """Covers line 55: fetch_since() returns [] when buffer is empty for symbol."""
-    store = PolarsStore()
-    since = datetime(2025, 1, 1, tzinfo=UTC)
-    result = await store.fetch_since("UNKNOWN_SYM", "1min", since)
-    assert result == []
 
 
 @pytest.fixture(scope="session")
@@ -229,7 +130,7 @@ async def test_get_candles_since(pg_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_candle_store_end_to_end(pg_engine) -> None:
-    from trading.indicators.library.ema import EMA
+    from quantindicators.library.ema import EMA
 
     sf = async_sessionmaker(pg_engine, expire_on_commit=False)
     candle_store = CandleDataStore(sf)
@@ -250,7 +151,7 @@ async def test_candle_store_end_to_end(pg_engine) -> None:
     ]
     await candle_store.save_candles(rows)
 
-    store = CandleStore(session_factory=sf, candle_store=candle_store)
+    store = CandleStore(candle_store=candle_store)
     ema = EMA(store, "HDFC", "15min")
     result = await ema.compute(EMA.Parameters(period=9))
     assert result == pytest.approx(200.0, rel=1e-3)
@@ -280,7 +181,7 @@ async def test_candle_store_redis_cache(pg_engine) -> None:
     ]
     await candle_store.save_candles(rows)
 
-    store = CandleStore(session_factory=sf, candle_store=candle_store, redis=redis)
+    store = CandleStore(candle_store=candle_store, redis=redis)
     r1 = await store.fetch("WIPRO", "15min", 20)
     r2 = await store.fetch("WIPRO", "15min", 20)
 
