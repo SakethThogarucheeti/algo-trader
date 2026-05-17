@@ -1,15 +1,15 @@
-"""Shared helpers for indicator unit tests."""
+"""Shared helpers for indicator integration tests (Postgres round-trip)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from trading.indicators.store import CandleStore
+from quantindicators.store import AbstractCandleStore
 
 
-def make_store(rows: list[dict]) -> CandleStore:
-    store = MagicMock(spec=CandleStore)
+def make_store(rows: list[dict]) -> AbstractCandleStore:
+    store = MagicMock(spec=AbstractCandleStore)
     store.fetch = AsyncMock(return_value=rows)
     store.fetch_since = AsyncMock(return_value=rows)
     return store
