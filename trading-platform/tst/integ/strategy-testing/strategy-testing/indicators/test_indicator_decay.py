@@ -28,11 +28,11 @@ import numpy as np
 from scipy import stats
 
 from trading.core.clock import SimulatedClock
-from trading.indicators.library.ema import EMA
-from trading.indicators.library.session_high_low_pct import SessionHighLowPct
-from trading.indicators.library.vwap import VWAP
-from trading.indicators.library.vwap_bands import VWAPBands
-from trading.indicators.polars_store import PolarsStore
+from quantindicators.library.ema import EMA
+from quantindicators.library.session_high_low_pct import SessionHighLowPct
+from quantindicators.library.vwap import VWAP
+from quantindicators.library.vwap_bands import VWAPBands
+from quantindicators.polars_store import PolarsStore
 
 _SYMBOLS = [
     "INFY",

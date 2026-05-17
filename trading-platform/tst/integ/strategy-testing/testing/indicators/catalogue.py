@@ -26,7 +26,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from trading.indicators.base import Indicator, IndicatorParameters
+from quantindicators.base import Indicator, IndicatorParameters
 
 _CATALOGUE_PATH = (
     Path(__file__).parents[2] / "strategy-testing" / "indicators" / "indicator_catalogue.json"
@@ -57,10 +57,10 @@ def load_catalogue(
     import importlib
     import pkgutil
 
-    import trading.indicators.library as _lib_pkg
+    import quantindicators.library as _lib_pkg
 
     for _info in pkgutil.iter_modules(_lib_pkg.__path__):
-        importlib.import_module(f"trading.indicators.library.{_info.name}")
+        importlib.import_module(f"quantindicators.library.{_info.name}")
 
     raw: dict[str, list[dict[str, Any]]] = json.loads(_CATALOGUE_PATH.read_text(encoding="utf-8"))
     entries = raw[interval]

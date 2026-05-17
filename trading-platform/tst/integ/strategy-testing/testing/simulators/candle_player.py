@@ -10,7 +10,7 @@ import polars as pl
 from trading.core.schemas import CandleEvent
 from trading.engine.component import Component
 from trading.engine.runtime import Runtime
-from trading.registry.candle import _SymbolConfig
+from trading.engine.bar_accumulator import SymbolConfig
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class CandlePlayer(Component):
 
     def __init__(
         self,
-        symbols: list[_SymbolConfig],
+        symbols: list[SymbolConfig],
         intervals: list[str],
         start: datetime,
         end: datetime,

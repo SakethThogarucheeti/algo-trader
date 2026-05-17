@@ -10,7 +10,7 @@ from testing.backtesting.data_loader import BrokerDataLoader, FileDataLoader
 from testing.simulators.synthetic_broker import SyntheticDataBroker
 
 from trading.core.clock import SimulatedClock
-from trading.indicators.polars_store import PolarsStore
+from quantindicators.polars_store import PolarsStore
 
 # trading-platform/data/  (parents: [0]=indicators [1]=strategy-testing(tests)
 #                                    [2]=strategy-testing(pkg) [3]=integ

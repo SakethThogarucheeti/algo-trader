@@ -29,12 +29,12 @@ from trading.core.clock import SimulatedClock
 from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType
 from trading.di.providers.strategy import make_strategy
-from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRegistry, AlgoRunConfig, AlgoInstance
-from trading.registry.candle import _SymbolConfig
-from trading.registry.exec import ExecConfig, ExecRegistry
-from trading.registry.risk import RiskConfig, RiskRegistry
-from trading.registry.tick import CircuitBreaker
+from quantindicators.polars_store import PolarsStore
+from trading.strategy.signal_generator import AlgoInstance, AlgoRunConfig, SignalGenerator
+from trading.engine.bar_accumulator import SymbolConfig
+from trading.execution.order_executor import ExecConfig, OrderExecutor
+from trading.risk.risk_filter import RiskConfig, RiskFilter
+from trading.engine.tick_ingestor import CircuitBreaker
 from trading.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class BacktestSession(TestingSession):
             algo = config.algo
             intervals = algo.candle_intervals or ["1min", "5min", "15min"]
             symbol_configs = [
-                _SymbolConfig(
+                SymbolConfig(
                     symbol=s,
                     instrument_token=0,
                     instrument_type=InstrumentType.EQUITY,
@@ -151,7 +151,7 @@ class BacktestSession(TestingSession):
 
             polars_store = PolarsStore()
 
-            algo_reg = AlgoRegistry(
+            algo_reg = SignalGenerator(
                 config=AlgoRunConfig(
                     instrument_strategy_map={s: algo.strategy_id for s in algo.instruments},
                     equity=config.initial_equity,
@@ -165,7 +165,7 @@ class BacktestSession(TestingSession):
                 store=polars_store,
             )
 
-            risk_reg = RiskRegistry(
+            risk_reg = RiskFilter(
                 config=RiskConfig(
                     equity=config.initial_equity,
                     paper_trading=True,
@@ -178,7 +178,7 @@ class BacktestSession(TestingSession):
                 clock=sim_clock,
             )
 
-            exec_reg = ExecRegistry(
+            exec_reg = OrderExecutor(
                 config=ExecConfig(exec_id="paper"),
                 broker=simulator,
                 session_factory=sf,
