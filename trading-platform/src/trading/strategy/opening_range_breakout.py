@@ -8,9 +8,9 @@ from datetime import time
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.library.atr import ATR
-from trading.indicators.store import AbstractCandleStore
-from trading.strategy.base import Signal, Strategy
+from quantindicators.library.atr import ATR
+from quantindicators.store import AbstractCandleStore
+from trading.strategy.base import RuntimeContext, Signal, Strategy
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class OpeningRangeBreakoutStrategy(Strategy):
         atr_period: int = 14,
         atr_multiplier: float = 1.5,
         interval_minutes: int = 15,
-        clock: Clock = SYSTEM_CLOCK,
+        runtime_context: RuntimeContext | None = None,
     ) -> None:
         if orb_bars < 1:
             raise ValueError(f"orb_bars must be >= 1, got {orb_bars}")
@@ -43,7 +43,9 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._atr_period = atr_period
         self._atr_multiplier = atr_multiplier
         self._interval_minutes = interval_minutes
-        self._clock = clock
+        self._clock: Clock = SYSTEM_CLOCK
+        if runtime_context is not None:
+            self.set_runtime_context(runtime_context)
         self._store: AbstractCandleStore | None = None
         # indicator cache: symbol → atr
         self._inds: dict[str, ATR] = {}
@@ -53,6 +55,9 @@ class OpeningRangeBreakoutStrategy(Strategy):
         self._last_atr: float | None = None
         self._last_or_high: float | None = None
         self._last_or_low: float | None = None
+
+    def set_runtime_context(self, ctx: RuntimeContext) -> None:
+        self._clock = ctx.clock
 
     def set_store(self, store: AbstractCandleStore) -> None:
         self._store = store

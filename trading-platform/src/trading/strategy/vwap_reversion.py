@@ -6,10 +6,10 @@ import logging
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.vwap import VWAP
-from trading.indicators.store import AbstractCandleStore
-from trading.strategy.base import Signal, Strategy
+from quantindicators.library.atr import ATR
+from quantindicators.library.vwap import VWAP
+from quantindicators.store import AbstractCandleStore
+from trading.strategy.base import RuntimeContext, Signal, Strategy
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +32,16 @@ class VwapReversionStrategy(Strategy):
         vwap_band: float = 1.0,
         atr_period: int = 14,
         atr_multiplier: float = 1.0,
-        clock: Clock = SYSTEM_CLOCK,
+        runtime_context: RuntimeContext | None = None,
     ) -> None:
         if vwap_band <= 0:
             raise ValueError(f"vwap_band must be positive, got {vwap_band}")
         self._vwap_band = vwap_band
         self._atr_period = atr_period
         self._atr_multiplier = atr_multiplier
-        self._clock = clock
+        self._clock: Clock = SYSTEM_CLOCK
+        if runtime_context is not None:
+            self.set_runtime_context(runtime_context)
         self._store: AbstractCandleStore | None = None
         # indicator cache: symbol → (vwap, atr)
         self._inds: dict[str, tuple[VWAP, ATR]] = {}
@@ -50,6 +52,9 @@ class VwapReversionStrategy(Strategy):
         self._last_atr: float | None = None
         self._last_close: float | None = None
 
+    def set_runtime_context(self, ctx: RuntimeContext) -> None:
+        self._clock = ctx.clock
+
     def set_store(self, store: AbstractCandleStore) -> None:
         self._store = store
 
@@ -57,7 +62,7 @@ class VwapReversionStrategy(Strategy):
         if symbol not in self._inds:
             assert self._store is not None, "set_store() must be called before on_candle()"
             self._inds[symbol] = (
-                VWAP(self._store, symbol, interval, self._clock),
+                VWAP(self._store, symbol, interval),
                 ATR(self._store, symbol, interval),
             )
         return self._inds[symbol]
@@ -79,7 +84,8 @@ class VwapReversionStrategy(Strategy):
         candle: CandleEvent,
     ) -> Signal | None:
         vwap_ind, atr_ind = self._get_inds(symbol, candle.interval)
-        vwap_params = VWAP.Parameters()
+        session_open_utc = self._clock.session_open_utc()
+        vwap_params = VWAP.Parameters(session_open_utc=session_open_utc)
         atr_params = ATR.Parameters(period=self._atr_period)
 
         vwap = await vwap_ind.compute(vwap_params)

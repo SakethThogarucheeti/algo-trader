@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.library.atr import ATR
-from trading.indicators.library.ema import EMA
-from trading.indicators.store import AbstractCandleStore
+from quantindicators.library.atr import ATR
+from quantindicators.library.ema import EMA
+from quantindicators.store import AbstractCandleStore
 from trading.strategy.base import Signal, Strategy
 
 logger = logging.getLogger(__name__)

@@ -23,7 +23,7 @@ from typing import Generator
 
 import polars as pl
 
-from trading.indicators.types import CandleRow
+from quantindicators.types import CandleRow
 
 logger = logging.getLogger(__name__)
 

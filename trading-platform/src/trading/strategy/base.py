@@ -7,10 +7,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.store import AbstractCandleStore
+from quantindicators.store import AbstractCandleStore
 
 _log = logging.getLogger(__name__)
+
+
+@dataclass
+class RuntimeContext:
+    """System-level runtime attributes passed to all strategies at construction time."""
+
+    clock: Clock = field(default_factory=lambda: SYSTEM_CLOCK)
 
 
 @dataclass
@@ -83,9 +91,17 @@ class Strategy(ABC):
         """Alias of this strategy instance (delegates to the class attribute)."""
         return self.__class__.alias  # type: ignore[attr-defined]
 
+    def set_runtime_context(self, ctx: RuntimeContext) -> None:  # noqa: B027
+        """
+        Called by create_strategy after construction to supply system-level runtime deps.
+
+        Override to receive the clock or other system attributes. Default is a no-op
+        for strategies that have no system-level dependencies.
+        """
+
     def set_store(self, store: AbstractCandleStore) -> None:  # noqa: B027
         """
-        Called by AlgoRegistry before the first on_candle to supply the data store.
+        Called once by AlgoRegistry before the first on_candle to supply the data store.
 
         Strategies that use indicators should override this to construct indicator
         instances using the provided store. Default implementation is a no-op for

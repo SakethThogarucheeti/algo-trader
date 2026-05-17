@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from trading.strategy.base import Signal
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -96,6 +100,20 @@ class SignalEvent(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     tick_log_id: int  # copied from the candle that triggered this signal
 
+    @classmethod
+    def from_signal(cls, signal: Signal, tick_log_id: int) -> SignalEvent:
+        return cls(
+            signal_id=signal.signal_id,
+            symbol=signal.symbol,
+            instrument_type=signal.instrument_type,
+            side=signal.side,
+            strategy_id=signal.strategy_id,
+            signal_type=signal.signal_type,
+            stop_distance=signal.stop_distance,
+            timestamp=signal.timestamp,
+            tick_log_id=tick_log_id,
+        )
+
 
 class ValidatedOrderEvent(BaseModel):
     signal_id: UUID
@@ -106,6 +124,19 @@ class ValidatedOrderEvent(BaseModel):
     order_type: OrderType
     limit_price: float | None = None  # None for MARKET orders
     tick_log_id: int  # carried through from signal
+
+    @classmethod
+    def from_signal_event(cls, event: SignalEvent, quantity: int) -> ValidatedOrderEvent:
+        return cls(
+            signal_id=event.signal_id,
+            symbol=event.symbol,
+            instrument_type=event.instrument_type,
+            side=event.side,
+            quantity=quantity,
+            order_type=OrderType.MARKET,
+            limit_price=None,
+            tick_log_id=event.tick_log_id,
+        )
 
 
 class OrderEvent(BaseModel):
