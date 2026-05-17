@@ -1,11 +1,11 @@
-"""Tests for core/messaging.py — AbstractRegistry, and pipeline/tick_registry.py — CircuitBreaker"""
+"""Tests for core/messaging.py — AbstractRegistry, and engine/tick_ingestor.py — CircuitBreaker"""
 
 from __future__ import annotations
 
 import pytest
 
 from trading.core.messaging import AbstractRegistry
-from trading.registry.tick import CircuitBreaker
+from trading.engine.tick_ingestor import CircuitBreaker
 
 # ---------------------------------------------------------------------------
 # AbstractRegistry

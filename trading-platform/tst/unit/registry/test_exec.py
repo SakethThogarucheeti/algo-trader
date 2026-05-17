@@ -1,4 +1,4 @@
-"""Tests for registry/exec.py — ExecRegistry."""
+"""Tests for execution/order_executor.py — OrderExecutor."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from trading.core.schemas import (
     SignalType,
     ValidatedOrderEvent,
 )
-from trading.registry.exec import ExecConfig, ExecRegistry
+from trading.execution.order_executor import ExecConfig, OrderExecutor
 from trading.storage.stores.trading import AbstractTradingStore
 
 NOW = datetime.now(UTC)
@@ -112,7 +112,7 @@ async def test_exec_paper_fill_price_method_is_called(engine: AsyncEngine) -> No
     price_store.update("INFY", 1500.0)
 
     config = ExecConfig(exec_id="paper")
-    reg = ExecRegistry(
+    reg = OrderExecutor(
         config=config,
         broker=_FakeBroker(),
         session_factory=sf,
@@ -144,7 +144,7 @@ async def test_exec_paper_fill_price_returns_none_logs_warning(engine: AsyncEngi
     price_store = PriceStore()  # no update → returns None
 
     config = ExecConfig(exec_id="paper")
-    reg = ExecRegistry(
+    reg = OrderExecutor(
         config=config,
         broker=_FakeBroker(),
         session_factory=sf,

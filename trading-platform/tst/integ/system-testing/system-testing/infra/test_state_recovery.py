@@ -18,7 +18,7 @@ from sqlalchemy import select
 from trading.broker.paper_broker import PriceStore
 from trading.core.models import Order
 from trading.core.schemas import InstrumentType, OrderType, Side, ValidatedOrderEvent
-from trading.registry.exec import ExecConfig, ExecRegistry
+from trading.execution.order_executor import ExecConfig, OrderExecutor
 from trading.storage.repository import Repository
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -65,7 +65,7 @@ async def test_no_duplicate_order_on_restart(engine, session_factory):
     price_store = PriceStore()
     price_store.update("RELIANCE", 2000.0)
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="paper"),
         broker=broker,
         session_factory=session_factory,
@@ -106,7 +106,7 @@ async def test_order_persisted_in_db(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="paper"),
         broker=_SimpleBroker(),
         session_factory=session_factory,

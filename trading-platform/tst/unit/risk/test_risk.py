@@ -1,4 +1,4 @@
-"""Tests for pipeline/risk_registry.py — RiskRegistry, and risk/sizer.py"""
+"""Tests for risk/risk_filter.py — RiskFilter, and risk/sizer.py"""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from trading.core.schemas import (
     SignalType,
     ValidatedOrderEvent,
 )
-from trading.registry.risk import RiskConfig, RiskRegistry
-from trading.registry.tick import CircuitBreaker
+from trading.risk.risk_filter import RiskConfig, RiskFilter
+from trading.engine.tick_ingestor import CircuitBreaker
 from trading.risk.sizer import calculate_quantity
 from trading.storage.stores.audit import AuditStore
 from trading.storage.stores.trading import TradingStore
@@ -102,9 +102,9 @@ def make_registry(
     engine: AsyncEngine,
     circuit: CircuitBreaker | None = None,
     config: RiskConfig | None = None,
-) -> RiskRegistry:
+) -> RiskFilter:
     sf = build_session_factory(engine)
-    return RiskRegistry(
+    return RiskFilter(
         config=config or make_config(),
         circuit=circuit or CircuitBreaker(),
         trading=TradingStore(sf),
@@ -333,7 +333,7 @@ async def test_rejected_signal_logged_to_audit(engine: AsyncEngine) -> None:
     await reg.handle(make_signal())
 
     async with get_session(engine) as s:
-        result = await s.execute(select(AuditLog).where(AuditLog.module.like("risk_registry%")))
+        result = await s.execute(select(AuditLog).where(AuditLog.module.like("risk_filter%")))
         logs = result.scalars().all()
 
     assert len(logs) >= 1
@@ -385,7 +385,7 @@ async def test_audit_log_failure_in_accept_is_swallowed() -> None:
     mock_trading.get_position = AsyncMock(return_value=None)
     mock_trading.save_signal = AsyncMock()
 
-    reg = RiskRegistry(
+    reg = RiskFilter(
         config=make_config(),
         circuit=CircuitBreaker(),
         trading=mock_trading,
@@ -423,7 +423,7 @@ async def test_save_signal_failure_is_swallowed() -> None:
     mock_trading.get_position = AsyncMock(return_value=None)
     mock_trading.save_signal = AsyncMock(side_effect=RuntimeError("DB down"))
 
-    reg = RiskRegistry(
+    reg = RiskFilter(
         config=make_config(),
         circuit=CircuitBreaker(),
         trading=mock_trading,
@@ -458,7 +458,7 @@ async def test_reject_audit_log_failure_is_swallowed() -> None:
 
     mock_trading = AsyncMock()
 
-    reg = RiskRegistry(
+    reg = RiskFilter(
         config=make_config(),
         circuit=CircuitBreaker(),
         trading=mock_trading,
@@ -483,7 +483,8 @@ async def test_log_decision_writes_when_tick_log_id_positive(engine: AsyncEngine
 
     reg = make_registry(engine)
     sig = make_signal(tick_log_id=99)
-    await reg._log_decision("SIGNAL_ACCEPTED", sig, {"qty": 5, "order_type": "MARKET"})
+    from trading.risk.risk_filter import SignalAcceptedContext
+    await reg._log_decision("SIGNAL_ACCEPTED", sig, SignalAcceptedContext(qty=5, order_type="MARKET"))
 
     # Wait briefly for the fire-and-forget task
     import asyncio

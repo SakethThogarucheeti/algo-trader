@@ -14,7 +14,7 @@ from trading.broker.types import Tick
 from trading.core.context import thread_id
 from trading.core.schemas import TickEvent
 from trading.engine.component import Component
-from trading.registry.tick import TickRegistry
+from trading.engine.tick_ingestor import TickIngestor
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,9 @@ OnTickCallback = Callable[[TickEvent], Coroutine[Any, Any, None]]
 
 class KiteIngestor(Component):
     """
-    Maintains the broker WebSocket connection and feeds raw ticks into TickRegistry.
+    Maintains the broker WebSocket connection and feeds raw ticks into TickIngestor.
 
-    After TickRegistry validates and persists the tick, each registered
+    After TickIngestor validates and persists the tick, each registered
     ``on_tick`` callback is called in order. Register the candle→algo→risk→exec
     chain via ``add_on_tick(callback)`` before starting.
 
@@ -42,7 +42,7 @@ class KiteIngestor(Component):
     def __init__(
         self,
         stream: BrokerStream,
-        tick_registry: TickRegistry,
+        tick_registry: TickIngestor,
         price_store: AbstractPriceStore | None = None,
         connect_timeout_secs: float = _CONNECT_TIMEOUT_SECS,
     ) -> None:

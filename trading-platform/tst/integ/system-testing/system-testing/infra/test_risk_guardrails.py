@@ -1,7 +1,7 @@
 """
-Risk controller guardrail tests.
+Risk filter guardrail tests.
 
-Verifies that RiskRegistry correctly enforces:
+Verifies that RiskFilter correctly enforces:
 - Intraday time cutoff
 - Duplicate position guard
 - Zero quantity rejection
@@ -18,8 +18,8 @@ from trading.core.schemas import (
     SignalType,
     ValidatedOrderEvent,
 )
-from trading.registry.risk import RiskConfig, RiskRegistry
-from trading.registry.tick import CircuitBreaker
+from trading.risk.risk_filter import RiskConfig, RiskFilter
+from trading.engine.tick_ingestor import CircuitBreaker
 from trading.storage.repository import Repository
 
 
@@ -46,8 +46,8 @@ def _make_risk_reg(
     cutoff_minute: int = 59,
     equity: float = 1_000_000.0,
     clock=None,
-) -> RiskRegistry:
-    return RiskRegistry(
+) -> RiskFilter:
+    return RiskFilter(
         config=RiskConfig(
             equity=equity,
             max_daily_loss_pct=2.0,
@@ -124,7 +124,7 @@ async def test_circuit_open_rejects_signal(engine, session_factory):
     circuit = CircuitBreaker()
     circuit.open()
 
-    risk_reg = RiskRegistry(
+    risk_reg = RiskFilter(
         config=RiskConfig(
             equity=1_000_000.0,
             paper_trading=True,

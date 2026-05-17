@@ -1,7 +1,7 @@
 """
 Order lifecycle integration tests.
 
-Tests the full path: ValidatedOrderEvent → ExecRegistry → broker → fill → position update in DB.
+Tests the full path: ValidatedOrderEvent → OrderExecutor → broker → fill → position update in DB.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from trading.core.schemas import (
     Side,
     ValidatedOrderEvent,
 )
-from trading.registry.exec import ExecConfig, ExecRegistry
+from trading.execution.order_executor import ExecConfig, OrderExecutor
 from trading.storage.repository import Repository
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -68,7 +68,7 @@ async def test_place_and_fill(engine, session_factory):
     price_store = PriceStore()
     price_store.update("INFY", 1500.0)
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="paper"),
         broker=PaperBroker(_NullRealBroker()),
         session_factory=session_factory,
@@ -96,7 +96,7 @@ async def test_position_updated_after_fill(engine, session_factory):
     price_store = PriceStore()
     price_store.update("INFY", 1500.0)
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="paper"),
         broker=PaperBroker(_NullRealBroker()),
         session_factory=session_factory,
@@ -141,7 +141,7 @@ async def test_idempotency_duplicate_signal(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="direct"),
         broker=_CountingBroker(),
         session_factory=session_factory,
@@ -177,7 +177,7 @@ async def test_broker_rejection_marks_order_rejected(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="direct"),
         broker=_FailingBroker(),
         session_factory=session_factory,

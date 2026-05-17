@@ -1,7 +1,7 @@
 """
 End-to-end pipeline integration tests.
 
-Drives the full AlgoRegistry → RiskRegistry → ExecRegistry chain
+Drives the full SignalGenerator → RiskFilter → OrderExecutor chain
 with synthetic candle data. Uses FaultInjector to verify the broker
 layer handles errors without corrupting DB state.
 """
@@ -30,9 +30,9 @@ from trading.core.schemas import (
     SignalEvent,
     SignalType,
 )
-from trading.registry.exec import ExecConfig, ExecRegistry
-from trading.registry.risk import RiskConfig, RiskRegistry
-from trading.registry.tick import CircuitBreaker
+from trading.execution.order_executor import ExecConfig, OrderExecutor
+from trading.risk.risk_filter import RiskConfig, RiskFilter
+from trading.engine.tick_ingestor import CircuitBreaker
 from trading.storage.repository import Repository
 
 # ---------------------------------------------------------------------------
@@ -70,11 +70,11 @@ def _signal(symbol: str = "INFY", stop_distance: float = 1.0) -> SignalEvent:
 
 
 def _make_pipeline(session_factory, broker):
-    """Build RiskRegistry → ExecRegistry wired together."""
+    """Build RiskFilter → OrderExecutor wired together."""
     clock = SimulatedClock()
     clock.advance(datetime(2024, 1, 2, 10, 0, tzinfo=UTC))
 
-    risk_reg = RiskRegistry(
+    risk_reg = RiskFilter(
         config=RiskConfig(
             equity=1_000_000.0,
             paper_trading=True,
@@ -89,7 +89,7 @@ def _make_pipeline(session_factory, broker):
     price_store = PriceStore()
     price_store.update("INFY", 1505.0)
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="paper"),
         broker=broker,
         session_factory=session_factory,

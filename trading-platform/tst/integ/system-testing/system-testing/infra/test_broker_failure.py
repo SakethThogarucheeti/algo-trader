@@ -1,7 +1,7 @@
 """
 Broker failure mode tests.
 
-Verifies that ExecRegistry handles:
+Verifies that OrderExecutor handles:
 - Broker timeout (TimeoutError)
 - Broker API error (generic exception)
 - Consecutive failures without deadlock
@@ -23,7 +23,7 @@ from trading.core.schemas import (
     Side,
     ValidatedOrderEvent,
 )
-from trading.registry.exec import ExecConfig, ExecRegistry
+from trading.execution.order_executor import ExecConfig, OrderExecutor
 from trading.storage.repository import Repository
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -59,7 +59,7 @@ async def test_broker_timeout_produces_rejected_order(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="direct"),
         broker=_TimeoutBroker(),
         session_factory=session_factory,
@@ -100,7 +100,7 @@ async def test_consecutive_broker_failures_no_deadlock(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="direct"),
         broker=_AlwaysFailBroker(),
         session_factory=session_factory,
@@ -132,7 +132,7 @@ async def test_broker_api_error_leaves_db_consistent(engine, session_factory):
 
             return pl.DataFrame()
 
-    exec_reg = ExecRegistry(
+    exec_reg = OrderExecutor(
         config=ExecConfig(exec_id="direct"),
         broker=_ErrorBroker(),
         session_factory=session_factory,

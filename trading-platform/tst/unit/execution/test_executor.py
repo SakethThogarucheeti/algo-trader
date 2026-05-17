@@ -1,4 +1,4 @@
-"""Tests for pipeline/exec_registry.py — ExecRegistry, and execution/idempotency.py"""
+"""Tests for execution/order_executor.py — OrderExecutor, and execution/idempotency.py"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from trading.core.schemas import (
     ValidatedOrderEvent,
 )
 from trading.execution.idempotency import is_duplicate
-from trading.registry.exec import ExecConfig, ExecRegistry
+from trading.execution.order_executor import ExecConfig, OrderExecutor
 from trading.storage.stores.trading import TradingStore
 
 NOW = datetime.now(UTC)
@@ -87,10 +87,10 @@ def make_registry(
     broker: MockBroker | None = None,
     exec_id: str = "direct",
     price_store: MockPriceStore | None = None,
-) -> ExecRegistry:
+) -> OrderExecutor:
     sf = build_session_factory(engine)
     config = ExecConfig(exec_id=exec_id)
-    return ExecRegistry(
+    return OrderExecutor(
         config=config,
         broker=broker or MockBroker(),
         session_factory=sf,
