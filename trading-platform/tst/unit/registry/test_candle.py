@@ -1,4 +1,4 @@
-"""Tests for pipeline/candle_registry.py — CandleRegistry"""
+"""Tests for CandleAggregator (was CandleAggregator)"""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from trading.broker.base.broker import Broker
 from trading.core.database import build_session_factory, init_db
 from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
-from trading.registry.candle import CandleConfig, CandleRegistry, _bar_open_time
+from trading.engine.bar_accumulator import bar_open_time
+from trading.engine.candle_aggregator import CandleAggregator, CandleConfig
 from trading.storage.stores.audit import AuditStore
 from trading.storage.stores.candle import CandleDataStore
 
@@ -111,7 +112,7 @@ def make_registry(
     tokens: list[int] | None = None,
     intervals: list[str] | None = None,
     warmup_count: int = 5,
-) -> CandleRegistry:
+) -> CandleAggregator:
     tokens = tokens or [1]
     intervals = intervals or ["1min"]
     instruments = [make_instrument(t) for t in tokens]
@@ -121,7 +122,7 @@ def make_registry(
         intervals=intervals,
         warmup_count=warmup_count,
     )
-    return CandleRegistry(
+    return CandleAggregator(
         config=config,
         broker=broker,
         candle=CandleDataStore(sf),
@@ -129,24 +130,25 @@ def make_registry(
     )
 
 
+
 # ---------------------------------------------------------------------------
 # Bar open time helper
 # ---------------------------------------------------------------------------
 
 
-def test_bar_open_time_1min() -> None:
+def testbar_open_time_1min() -> None:
     ts = datetime(2025, 1, 6, 9, 17, 35, tzinfo=UTC)
-    assert _bar_open_time(ts, "1min") == datetime(2025, 1, 6, 9, 17, 0, tzinfo=UTC)
+    assert bar_open_time(ts, "1min") == datetime(2025, 1, 6, 9, 17, 0, tzinfo=UTC)
 
 
-def test_bar_open_time_5min() -> None:
+def testbar_open_time_5min() -> None:
     ts = datetime(2025, 1, 6, 9, 17, 0, tzinfo=UTC)
-    assert _bar_open_time(ts, "5min") == datetime(2025, 1, 6, 9, 15, 0, tzinfo=UTC)
+    assert bar_open_time(ts, "5min") == datetime(2025, 1, 6, 9, 15, 0, tzinfo=UTC)
 
 
-def test_bar_open_time_15min() -> None:
+def testbar_open_time_15min() -> None:
     ts = datetime(2025, 1, 6, 9, 29, 59, tzinfo=UTC)
-    assert _bar_open_time(ts, "15min") == datetime(2025, 1, 6, 9, 15, 0, tzinfo=UTC)
+    assert bar_open_time(ts, "15min") == datetime(2025, 1, 6, 9, 15, 0, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +162,8 @@ async def test_first_tick_initialises_bar(engine: AsyncEngine) -> None:
     result = await reg.handle(tick(1, 100.0, t(0)))
     # First tick opens the bar but doesn't close it
     assert result is None
-    assert ("SYM1", "1min") in reg._bars
-    bar = reg._bars[("SYM1", "1min")]
+    assert ("SYM1", "1min") in reg._accumulator._bars
+    bar = reg._accumulator._bars[("SYM1", "1min")]
     assert bar.open == bar.high == bar.low == bar.close == 100.0
     assert bar.volume == 100
 
@@ -172,7 +174,7 @@ async def test_higher_price_tick_updates_high(engine: AsyncEngine) -> None:
     await reg.handle(tick(1, 100.0, t(0)))
     await reg.handle(tick(1, 110.0, t(10)))
 
-    bar = reg._bars[("SYM1", "1min")]
+    bar = reg._accumulator._bars[("SYM1", "1min")]
     assert bar.high == 110.0
     assert bar.low == 100.0
     assert bar.close == 110.0
@@ -184,7 +186,7 @@ async def test_lower_price_tick_updates_low(engine: AsyncEngine) -> None:
     await reg.handle(tick(1, 100.0, t(0)))
     await reg.handle(tick(1, 90.0, t(10)))
 
-    bar = reg._bars[("SYM1", "1min")]
+    bar = reg._accumulator._bars[("SYM1", "1min")]
     assert bar.low == 90.0
     assert bar.high == 100.0
 
@@ -195,7 +197,7 @@ async def test_volume_accumulates_within_bar(engine: AsyncEngine) -> None:
     await reg.handle(tick(1, 100.0, t(0), volume=50))
     await reg.handle(tick(1, 101.0, t(10), volume=75))
 
-    bar = reg._bars[("SYM1", "1min")]
+    bar = reg._accumulator._bars[("SYM1", "1min")]
     assert bar.volume == 125
 
 
@@ -231,8 +233,8 @@ async def test_two_intervals_first_closes_1min(engine: AsyncEngine) -> None:
     assert candle.interval == "1min"
 
     # Both bars still tracked
-    assert ("SYM1", "1min") in reg._bars
-    assert ("SYM1", "5min") in reg._bars
+    assert ("SYM1", "1min") in reg._accumulator._bars
+    assert ("SYM1", "5min") in reg._accumulator._bars
 
 
 async def test_zero_volume_tick_updates_ohlc(engine: AsyncEngine) -> None:
@@ -240,7 +242,7 @@ async def test_zero_volume_tick_updates_ohlc(engine: AsyncEngine) -> None:
     reg = make_registry(MockBroker(), engine)
 
     await reg.handle(tick(1, 100.0, t(0), volume=0))
-    bar = reg._bars[("SYM1", "1min")]
+    bar = reg._accumulator._bars[("SYM1", "1min")]
     assert bar.volume == 0
     assert bar.open == 100.0
 
@@ -300,14 +302,14 @@ async def test_warmup_respects_warmup_count(engine: AsyncEngine) -> None:
 
 
 def test_ensure_utc_raises_on_non_datetime() -> None:
-    from trading.registry.candle import _ensure_utc
+    from trading.engine.candle_aggregator import _ensure_utc
 
     with pytest.raises(TypeError):
         _ensure_utc("2025-01-06")  # string, not datetime
 
 
 def test_ensure_utc_adds_utc_to_naive_datetime() -> None:
-    from trading.registry.candle import _ensure_utc
+    from trading.engine.candle_aggregator import _ensure_utc
 
     naive = datetime(2025, 1, 6, 9, 15)
     result = _ensure_utc(naive)
@@ -354,7 +356,7 @@ async def test_warmup_candle_persist_failure_is_swallowed(engine: AsyncEngine) -
     instruments = [make_instrument(1)]
     sf = build_session_factory(engine)
     config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
-    reg = CandleRegistry(
+    reg = CandleAggregator(
         config=config,
         broker=broker,
         candle=_FailingCandleStore(),
@@ -382,7 +384,7 @@ async def test_log_candle_tick_log_id_positive_calls_audit(engine: AsyncEngine) 
     instruments = [make_instrument(1)]
     sf = build_session_factory(engine)
     config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
-    reg = CandleRegistry(
+    reg = CandleAggregator(
         config=config,
         broker=MockBroker(),
         candle=_SucceedingCandleStore(),
@@ -423,7 +425,7 @@ async def test_log_candle_exception_path_is_swallowed(engine: AsyncEngine) -> No
     instruments = [make_instrument(1)]
     sf = build_session_factory(engine)
     config = CandleConfig(instruments=instruments, intervals=["1min"], warmup_count=5)
-    reg = CandleRegistry(
+    reg = CandleAggregator(
         config=config,
         broker=MockBroker(),
         candle=_FailingCandleStore(),
