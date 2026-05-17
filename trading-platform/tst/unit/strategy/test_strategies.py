@@ -8,8 +8,8 @@ import pytest
 
 from trading.core.clock import SimulatedClock
 from trading.core.schemas import CandleEvent, InstrumentType, Side
-from trading.indicators.polars_store import PolarsStore
-from trading.strategy.base import Strategy
+from quantindicators.polars_store import PolarsStore
+from trading.strategy.base import RuntimeContext, Strategy
 from trading.strategy.ema_crossover import EmaCrossoverStrategy
 from trading.strategy.opening_range_breakout import OpeningRangeBreakoutStrategy
 from trading.strategy.rsi_mean_reversion import RsiMeanReversionStrategy
@@ -156,7 +156,7 @@ async def test_vwap_buy_signal() -> None:
     # SimulatedClock advances to each candle's timestamp so VWAP session
     # boundary is derived from the bar's date, not the wall clock.
     clock = SimulatedClock()
-    strat = VwapReversionStrategy(vwap_band=0.5, clock=clock)
+    strat = VwapReversionStrategy(vwap_band=0.5, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
 
     session_open = datetime(2025, 1, 6, 3, 45, tzinfo=UTC)  # 09:15 IST
@@ -240,9 +240,7 @@ async def _feed_warmup(h: _Harness, n: int = 10) -> None:
 @pytest.mark.asyncio
 async def test_orb_buy_breakout_above_range() -> None:
     clock = SimulatedClock()
-    strat = OpeningRangeBreakoutStrategy(
-        orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, clock=clock
-    )
+    strat = OpeningRangeBreakoutStrategy(orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
     await _feed_warmup(h)
     # 2 range bars establishing OR high=105, OR low=99
@@ -259,9 +257,7 @@ async def test_orb_buy_breakout_above_range() -> None:
 @pytest.mark.asyncio
 async def test_orb_sell_breakout_below_range() -> None:
     clock = SimulatedClock()
-    strat = OpeningRangeBreakoutStrategy(
-        orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, clock=clock
-    )
+    strat = OpeningRangeBreakoutStrategy(orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
     await _feed_warmup(h)
     for i in range(2):
@@ -276,9 +272,7 @@ async def test_orb_sell_breakout_below_range() -> None:
 @pytest.mark.asyncio
 async def test_orb_only_one_signal_per_session() -> None:
     clock = SimulatedClock()
-    strat = OpeningRangeBreakoutStrategy(
-        orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, clock=clock
-    )
+    strat = OpeningRangeBreakoutStrategy(orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
     await _feed_warmup(h)
     for i in range(2):
@@ -296,9 +290,7 @@ async def test_orb_only_one_signal_per_session() -> None:
 @pytest.mark.asyncio
 async def test_orb_no_signal_inside_orb_window() -> None:
     clock = SimulatedClock()
-    strat = OpeningRangeBreakoutStrategy(
-        orb_bars=4, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, clock=clock
-    )
+    strat = OpeningRangeBreakoutStrategy(orb_bars=4, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
     sig = await h.feed(_candle(110.0, ts=_SESSION_OPEN_UTC, high=115.0, low=99.0))
     assert sig is None
@@ -307,9 +299,7 @@ async def test_orb_no_signal_inside_orb_window() -> None:
 @pytest.mark.asyncio
 async def test_orb_no_signal_on_insufficient_atr_data() -> None:
     clock = SimulatedClock()
-    strat = OpeningRangeBreakoutStrategy(
-        orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, clock=clock
-    )
+    strat = OpeningRangeBreakoutStrategy(orb_bars=2, atr_period=_ORB_ATR_PERIOD, interval_minutes=15, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat, clock=clock)
     sig = await h.feed(_candle(110.0, ts=_POST_ORB_UTC, high=111.0, low=109.0))
     assert sig is None

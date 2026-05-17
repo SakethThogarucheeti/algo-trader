@@ -3,16 +3,17 @@ Strategy package.
 
 Public API
 ----------
-    from trading.strategy import Strategy, Signal, StrategyFactory
+    from trading.strategy import Strategy, Signal
+    from trading.strategy.factory import get_strategy, create_strategy, registered_strategies
 
     # Look up a strategy class by ID
-    cls = StrategyFactory.get("ema_crossover")
+    cls = get_strategy("ema_crossover")
 
     # Instantiate with optional params and clock
-    inst = StrategyFactory.create("ema_crossover", params={"fast": 5, "slow": 13})
+    inst = create_strategy("ema_crossover", params={"fast": 5, "slow": 13})
 
     # Inspect all registered strategies
-    print(StrategyFactory.registered())
+    print(registered_strategies())
 
 Built-in strategies:
     "ema_crossover"          EmaCrossoverStrategy
@@ -22,6 +23,5 @@ Built-in strategies:
 """
 
 from trading.strategy.base import Signal, Strategy
-from trading.strategy.factory import StrategyFactory
 
-__all__ = ["Signal", "Strategy", "StrategyFactory"]
+__all__ = ["Signal", "Strategy"]

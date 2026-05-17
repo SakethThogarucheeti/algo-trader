@@ -1,4 +1,4 @@
-"""Tests for pipeline/algo_registry.py — AlgoRegistry"""
+"""Tests for strategy/signal_generator.py — SignalGenerator"""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from trading.core.database import build_session_factory, init_db
 from trading.core.schemas import CandleEvent, InstrumentType, SignalEvent
 from trading.di.providers.strategy import make_strategy
-from trading.indicators.polars_store import PolarsStore
-from trading.registry.algo import AlgoRegistry, AlgoRunConfig, AlgoInstance
+from quantindicators.polars_store import PolarsStore
+from trading.strategy.signal_generator import AlgoInstance, AlgoRunConfig, SignalGenerator
 from trading.storage.stores.audit import AuditStore
 from trading.storage.stores.chart import ChartStore
 from trading.storage.stores.config import ConfigStore
@@ -45,7 +45,7 @@ def _build_algos(
 
 def make_registry(
     engine: AsyncEngine, warmup_candles: int = 5, algo_name: str = "test_algo"
-) -> AlgoRegistry:
+) -> SignalGenerator:
     sf = build_session_factory(engine)
     instrument_strategy_map = {"INFY": "ema_crossover"}
     instrument_types = {"INFY": "EQUITY"}
@@ -58,7 +58,7 @@ def make_registry(
     )
     algos = _build_algos(instrument_strategy_map, instrument_types)
     store = PolarsStore()
-    return AlgoRegistry(
+    return SignalGenerator(
         config=config,
         chart=ChartStore(sf),
         config_store=ConfigStore(sf),
@@ -103,7 +103,7 @@ def test_registry_with_multiple_instruments(engine: AsyncEngine) -> None:
         instrument_types=instrument_types,
     )
     algos = _build_algos(instrument_strategy_map, instrument_types)
-    reg = AlgoRegistry(
+    reg = SignalGenerator(
         config=config,
         chart=ChartStore(sf),
         config_store=ConfigStore(sf),
@@ -190,7 +190,7 @@ async def test_handle_only_affects_matching_symbol(engine: AsyncEngine) -> None:
         warmup_candles=5,
     )
     algos = _build_algos(instrument_strategy_map, instrument_types)
-    reg = AlgoRegistry(
+    reg = SignalGenerator(
         config=config,
         chart=ChartStore(sf),
         config_store=ConfigStore(sf),
@@ -305,14 +305,14 @@ async def test_log_signal_audit_failure_is_swallowed() -> None:
     mock_chart = AsyncMock()
     mock_config_store = AsyncMock()
 
-    from trading.indicators.polars_store import PolarsStore
-    from trading.registry.algo import AlgoRegistry, AlgoRunConfig
+    from quantindicators.polars_store import PolarsStore
+    from trading.strategy.signal_generator import AlgoRunConfig, SignalGenerator
 
     config = AlgoRunConfig(
         instrument_strategy_map={"INFY": "ema_crossover"},
         algo_name="fail_audit_test",
     )
-    reg = AlgoRegistry(
+    reg = SignalGenerator(
         config=config,
         chart=mock_chart,
         config_store=mock_config_store,
@@ -335,20 +335,18 @@ async def test_log_signal_audit_failure_is_swallowed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# set_indicator_context — covers line 81
+# set_indicator_store — covers the store override method
 # ---------------------------------------------------------------------------
 
 
-def test_set_indicator_context_replaces_context(engine: AsyncEngine) -> None:
-    """Covers line 81: set_indicator_context() stores the new context."""
-    from trading.indicators.context import IndicatorContext
-    from trading.indicators.polars_store import PolarsStore
+def test_set_indicator_store_replaces_store(engine: AsyncEngine) -> None:
+    """Covers set_indicator_store(): replaces the indicator store."""
+    from quantindicators.polars_store import PolarsStore
 
     reg = make_registry(engine)
     new_store = PolarsStore()
-    new_ctx = IndicatorContext(new_store)
-    reg.set_indicator_context(new_ctx)
-    assert reg._indicator_context is new_ctx
+    reg.set_indicator_store(new_store)
+    assert reg._indicator_store is new_store
 
 
 # ---------------------------------------------------------------------------

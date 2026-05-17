@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 
 from trading.core.schemas import CandleEvent, InstrumentType, Side, SignalType
-from trading.indicators.polars_store import PolarsStore
+from quantindicators.polars_store import PolarsStore
 from trading.strategy.ema_crossover import EmaCrossoverStrategy
 from trading.strategy.base import Strategy
 

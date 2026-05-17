@@ -8,7 +8,8 @@ import pytest
 
 from trading.core.clock import SimulatedClock
 from trading.core.schemas import CandleEvent, InstrumentType, Side
-from trading.indicators.polars_store import PolarsStore
+from quantindicators.polars_store import PolarsStore
+from trading.strategy.base import RuntimeContext
 from trading.strategy.vwap_reversion import VwapReversionStrategy
 
 BASE_TIME = datetime(2025, 1, 6, 9, 15, tzinfo=UTC)
@@ -65,7 +66,7 @@ class _Harness:
 async def test_get_state_returns_values_when_set() -> None:
     """Covers line 66: get_state() when last_vwap/atr/close are populated."""
     clock = SimulatedClock()
-    strat = VwapReversionStrategy(vwap_band=0.5, atr_period=3, atr_multiplier=1.0, clock=clock)
+    strat = VwapReversionStrategy(vwap_band=0.5, atr_period=3, atr_multiplier=1.0, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat)
 
     # Feed enough candles to populate the indicator state
@@ -99,7 +100,7 @@ async def test_returns_none_when_prev_values_are_none() -> None:
     """
     clock = SimulatedClock()
     # atr_period=1 so ATR can return a value on the very first bar
-    strat = VwapReversionStrategy(vwap_band=0.001, atr_period=1, clock=clock)
+    strat = VwapReversionStrategy(vwap_band=0.001, atr_period=1, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat)
 
     # Feed TWO candles so ATR can compute, but check prev_close/prev_vwap on transition
@@ -124,7 +125,7 @@ async def test_sell_signal_path() -> None:
     """Covers lines 128-135: SELL signal when price is above VWAP by >= band and close < prev_close."""
     clock = SimulatedClock()
     # Use very small band to make triggering easy
-    strat = VwapReversionStrategy(vwap_band=0.0001, atr_period=3, atr_multiplier=1.0, clock=clock)
+    strat = VwapReversionStrategy(vwap_band=0.0001, atr_period=3, atr_multiplier=1.0, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat)
 
     signals = []
@@ -149,7 +150,7 @@ async def test_sell_signal_path() -> None:
 async def test_sell_signal_fires_when_conditions_met() -> None:
     """Covers lines 128-135: SELL signal path is exercised."""
     clock = SimulatedClock()
-    strat = VwapReversionStrategy(vwap_band=0.0001, atr_period=3, atr_multiplier=1.0, clock=clock)
+    strat = VwapReversionStrategy(vwap_band=0.0001, atr_period=3, atr_multiplier=1.0, runtime_context=RuntimeContext(clock=clock))
     h = _Harness(strat)
 
     signals = []
