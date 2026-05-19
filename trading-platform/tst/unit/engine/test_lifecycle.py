@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import polars as pl
 import pytest
+from anyio import create_task_group, sleep
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.broker.base.broker import Broker
 from trading.core.database import build_session_factory, init_db
 from trading.core.models import Instrument
+from trading.core.schemas import CandleEvent, InstrumentType
 from trading.engine.candle_aggregator import CandleAggregator, CandleAggregatorComponent, CandleConfig
 from trading.engine.component import ComponentState
 from trading.storage.stores.audit import AuditStore
@@ -44,7 +47,6 @@ async def engine() -> AsyncEngine:  # type: ignore[misc]
 async def test_candle_aggregator_starts_and_reaches_running(engine: AsyncEngine) -> None:
     sf = build_session_factory(engine)
 
-    # Seed an instrument so the registry knows the token
     from trading.core.database import get_session
 
     async with get_session(engine) as s:
@@ -63,24 +65,17 @@ async def test_candle_aggregator_starts_and_reaches_running(engine: AsyncEngine)
     )
     agg = CandleAggregatorComponent(reg)
 
-    task = asyncio.get_event_loop().create_task(agg.start())
-    await asyncio.sleep(0.1)
-
-    assert agg.state == ComponentState.RUNNING
-
-    await agg.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    async with create_task_group() as tg:
+        await tg.start(agg.start)
+        await sleep(0.1)
+        assert agg.state == ComponentState.RUNNING
+        await agg.stop()
 
 
 async def test_candle_aggregator_add_algo_registry_and_warmup_replay(
     engine: AsyncEngine,
 ) -> None:
     """add_algo_registry registers a callback and warmup candles are replayed."""
-    from datetime import UTC, datetime
-    from unittest.mock import AsyncMock, MagicMock
-
-    from trading.core.schemas import CandleEvent, InstrumentType
-
     candle = CandleEvent(
         symbol="INFY",
         instrument_type=InstrumentType.EQUITY,
@@ -112,11 +107,6 @@ async def test_candle_aggregator_warmup_error_does_not_abort(
     engine: AsyncEngine,
 ) -> None:
     """An exception in a warmup replay call is logged but does not propagate."""
-    from datetime import UTC, datetime
-    from unittest.mock import AsyncMock, MagicMock
-
-    from trading.core.schemas import CandleEvent, InstrumentType
-
     candle = CandleEvent(
         symbol="INFY",
         instrument_type=InstrumentType.EQUITY,
@@ -139,7 +129,6 @@ async def test_candle_aggregator_warmup_error_does_not_abort(
     agg = CandleAggregatorComponent(mock_candle_reg)
     agg.add_algo_registry(mock_algo_reg)
 
-    # Should complete without raising
     await agg._setup()
 
 
@@ -147,8 +136,6 @@ async def test_candle_aggregator_no_warmup_candles_no_replay(
     engine: AsyncEngine,
 ) -> None:
     """When warmup() returns an empty list, no algo handles are called."""
-    from unittest.mock import AsyncMock, MagicMock
-
     mock_candle_reg = MagicMock()
     mock_candle_reg.warmup = AsyncMock(return_value=[])
 

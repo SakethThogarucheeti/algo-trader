@@ -15,7 +15,7 @@ Usage
 from __future__ import annotations
 
 import argparse
-import asyncio
+import anyio
 import sys
 from datetime import UTC, date, datetime, timedelta
 
@@ -90,7 +90,7 @@ def main() -> None:
         start, end = _month_window(for_date)
         title = f"MONTH REVIEW — {start.strftime('%B %Y')}"
 
-    asyncio.run(run_report(start, end, title))
+    anyio.run(run_report, start, end, title)
 
 
 if __name__ == "__main__":

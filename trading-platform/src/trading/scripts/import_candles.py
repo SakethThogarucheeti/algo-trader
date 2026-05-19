@@ -15,7 +15,7 @@ Usage
 from __future__ import annotations
 
 import argparse
-import asyncio
+import anyio
 import logging
 from datetime import UTC
 from pathlib import Path
@@ -162,7 +162,7 @@ async def _run(args: argparse.Namespace) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = _parse_args()
-    asyncio.run(_run(args))
+    anyio.run(_run, args)
 
 
 if __name__ == "__main__":

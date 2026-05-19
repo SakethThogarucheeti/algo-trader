@@ -13,7 +13,7 @@ from trading.core.models import Instrument
 from trading.core.schemas import CandleEvent, InstrumentType, TickEvent
 from trading.core.tasks import fire
 from quantindicators.types import CandleRow
-from trading.engine.bar_accumulator import INTERVAL_MINUTES, BarAccumulator, SymbolConfig
+from trading.engine.bar_accumulator import INTERVAL_MINUTES, AbstractBarAccumulator, BarAccumulator, SymbolConfig
 from trading.engine.component import Component
 from trading.strategy.signal_generator import SignalGenerator
 from trading.storage.stores.audit import AbstractAuditStore, AuditContext
@@ -65,6 +65,7 @@ class CandleAggregator(AbstractRegistry):
         broker: Broker,
         candle: AbstractCandleDataStore,
         audit: AbstractAuditStore,
+        accumulator: AbstractBarAccumulator | None = None,
     ) -> None:
         self._config = config
         self._broker = broker
@@ -80,7 +81,7 @@ class CandleAggregator(AbstractRegistry):
             for inst in config.instruments
         ]
         self._token_sc: dict[int, SymbolConfig] = {sc.instrument_token: sc for sc in self._symbols}
-        self._accumulator = BarAccumulator()
+        self._accumulator: AbstractBarAccumulator = accumulator if accumulator is not None else BarAccumulator()
 
     # ------------------------------------------------------------------
     # Warm-up — call once before the live tick stream starts
@@ -98,14 +99,17 @@ class CandleAggregator(AbstractRegistry):
         lookback_hours = int(calendar_minutes / 60) + 24
         start = now - timedelta(hours=lookback_hours)
 
+        fetch_failures = parse_failures = persist_failures = 0
+
         for sc in self._symbols:
             for interval in self._config.intervals:
                 try:
                     df = self._broker.get_ohlc(sc.symbol, interval, start, now)
                 except Exception as exc:
                     logger.warning(
-                        "CandleAggregator: warmup failed for %s %s — %s", sc.symbol, interval, exc
+                        "CandleAggregator: warmup fetch failed for %s %s — %s", sc.symbol, interval, exc
                     )
+                    fetch_failures += 1
                     continue
                 if df.is_empty():
                     continue
@@ -146,16 +150,26 @@ class CandleAggregator(AbstractRegistry):
                             interval,
                             exc,
                         )
+                        parse_failures += 1
                 if warmup_rows:
                     try:
                         await self._candle.save_candles(warmup_rows)
                     except Exception as exc:
                         logger.warning(
-                            "CandleAggregator: warmup candle persist failed for %s %s — %s",
+                            "CandleAggregator: warmup persist failed for %s %s — %s",
                             sc.symbol,
                             interval,
                             exc,
                         )
+                        persist_failures += 1
+
+        if fetch_failures or parse_failures or persist_failures:
+            logger.warning(
+                "CandleAggregator: warmup finished with errors — fetch=%d parse=%d persist=%d",
+                fetch_failures,
+                parse_failures,
+                persist_failures,
+            )
         logger.info("CandleAggregator: warmup produced %d candles", len(events))
         return events
 

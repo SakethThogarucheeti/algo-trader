@@ -174,7 +174,7 @@ def _fetch_symbol(
 
 def _symbols_from_db() -> list[str]:
     """Load symbol list from the trading DB (requires DB to be running)."""
-    import asyncio
+    import anyio
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -192,7 +192,7 @@ def _symbols_from_db() -> list[str]:
         await engine.dispose()
         return [r.symbol for r in rows]
 
-    return asyncio.run(_fetch())
+    return anyio.run(_fetch)
 
 
 def _build_broker() -> object:

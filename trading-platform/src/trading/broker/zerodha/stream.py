@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -80,12 +79,14 @@ class ZerodhaStream(BrokerStream):
     async def subscribe(self, tokens: list[int]) -> None:
         if self._ticker is None:
             raise RuntimeError("ZerodhaStream: not connected")
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._ticker.subscribe, tokens)  # type: ignore[attr-defined]
-        await loop.run_in_executor(None, self._ticker.set_mode, self._ticker.MODE_FULL, tokens)  # type: ignore[attr-defined]
+        from anyio import to_thread
+
+        await to_thread.run_sync(self._ticker.subscribe, tokens)  # type: ignore[attr-defined]
+        await to_thread.run_sync(lambda: self._ticker.set_mode(self._ticker.MODE_FULL, tokens))  # type: ignore[attr-defined]
 
     async def close(self) -> None:
         if self._ticker is not None:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._ticker.close)  # type: ignore[attr-defined]
+            from anyio import to_thread
+
+            await to_thread.run_sync(self._ticker.close)  # type: ignore[attr-defined]
             self._ticker = None

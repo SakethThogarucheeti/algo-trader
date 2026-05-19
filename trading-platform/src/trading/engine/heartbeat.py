@@ -75,11 +75,16 @@ class HeartbeatMonitor(Component):
 
     async def _beat_loop(self) -> None:
         """Upsert own heartbeat every beat_interval_secs."""
+        consecutive = 0
         while True:
             try:
                 await self._heartbeat.update_heartbeat(self.name)
+                consecutive = 0
             except Exception:
-                logger.exception("HeartbeatMonitor: beat failed")
+                consecutive += 1
+                logger.exception("HeartbeatMonitor: beat failed (%d/3)", consecutive)
+                if consecutive >= 3:
+                    raise
             await sleep(self._beat_interval)
 
     async def _monitor_loop(self) -> None:

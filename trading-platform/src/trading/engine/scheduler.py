@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -37,19 +36,17 @@ class Scheduler:
     def __init__(
         self,
         settings: Settings,
-        runtime_task: asyncio.Task[None] | None = None,
         on_market_open: Any | None = None,  # async callable
         on_market_close: Any | None = None,  # async callable
         on_eod: Any | None = None,  # async callable
         on_sync: Any | None = None,  # async callable
     ) -> None:
         self._settings = settings
-        self._runtime_task = runtime_task
         self._on_market_open = on_market_open
         self._on_market_close = on_market_close
         self._on_eod = on_eod
         self._on_sync = on_sync
-        self._scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+        self._scheduler: AsyncIOScheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
         self._register_jobs()
 
     # ------------------------------------------------------------------
@@ -70,7 +67,7 @@ class Scheduler:
 
     def _register_jobs(self) -> None:
         if self._on_market_open:
-            self._scheduler.add_job(  # type: ignore[union-attr]
+            self._scheduler.add_job(
                 self._on_market_open,
                 trigger="cron",
                 day_of_week="mon-fri",
@@ -81,7 +78,7 @@ class Scheduler:
             )
 
         if self._on_market_close:
-            self._scheduler.add_job(  # type: ignore[union-attr]
+            self._scheduler.add_job(
                 self._on_market_close,
                 trigger="cron",
                 day_of_week="mon-fri",
@@ -92,7 +89,7 @@ class Scheduler:
             )
 
         if self._on_eod:
-            self._scheduler.add_job(  # type: ignore[union-attr]
+            self._scheduler.add_job(
                 self._on_eod,
                 trigger="cron",
                 day_of_week="mon-fri",
@@ -103,7 +100,7 @@ class Scheduler:
             )
 
         if self._on_sync:
-            self._scheduler.add_job(  # type: ignore[union-attr]
+            self._scheduler.add_job(
                 self._on_sync,
                 trigger="cron",
                 day_of_week="sun",
@@ -114,4 +111,4 @@ class Scheduler:
             )
 
     def get_job_ids(self) -> list[str]:
-        return [job.id for job in self._scheduler.get_jobs()]  # type: ignore[union-attr]
+        return [job.id for job in self._scheduler.get_jobs()]

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import UTC, datetime
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.types import Tick
@@ -52,8 +50,8 @@ class TickIngestor(AbstractRegistry):
     """
     Ingests raw WebSocket ticks, persists them to DB, and produces TickEvents.
 
-    Owns the CircuitBreaker — opens it after prolonged disconnect, closes it
-    on reconnect. RiskFilter receives a reference to this same instance.
+    Owns the CircuitBreaker — KiteIngestor opens it after prolonged disconnect
+    and closes it on reconnect. RiskFilter receives a reference to this same instance.
 
     Call handle(raw_tick_dict) for each tick arriving from the broker stream.
     Returns a TickEvent on success, None if the tick is invalid or unknown.
@@ -72,8 +70,6 @@ class TickIngestor(AbstractRegistry):
         self._circuit_timeout_secs = circuit_timeout_secs
 
         self.circuit = CircuitBreaker()
-        self._circuit_task: asyncio.Task[None] | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
 
         self._token_type: dict[int, InstrumentType] = {
             inst.token: InstrumentType(inst.instrument_type) for inst in config.instruments
@@ -103,18 +99,20 @@ class TickIngestor(AbstractRegistry):
 
         symbol = self._token_symbol[token]
 
-        try:
-            raw_event = TickEvent(
-                instrument_token=token,
-                instrument_type=instrument_type,
-                last_price=raw.get("last_price", 0),
-                volume=raw.get("volume_traded", raw.get("volume", 0)),
-                timestamp=datetime.now(UTC),
-                tick_log_id=0,
-            )
-        except ValidationError:
-            logger.warning("TickIngestor: invalid tick for token %s — %r", token, raw)
+        last_price: float = raw.get("last_price", 0.0)
+        if not last_price:
             return None
+
+        from datetime import UTC, datetime
+
+        raw_event = TickEvent(
+            instrument_token=token,
+            instrument_type=instrument_type,
+            last_price=last_price,
+            volume=raw.get("volume_traded", raw.get("volume", 0)),
+            timestamp=datetime.now(UTC),
+            tick_log_id=0,
+        )
 
         try:
             tick_log_id = await self._audit.log_tick(raw_event, symbol)
@@ -122,43 +120,7 @@ class TickIngestor(AbstractRegistry):
             logger.warning("TickIngestor: DB persist failed for token %s — %s", token, exc)
             tick_log_id = -1
 
-        return TickEvent(
-            instrument_token=token,
-            instrument_type=instrument_type,
-            last_price=raw_event.last_price,
-            volume=raw_event.volume,
-            timestamp=raw_event.timestamp,
-            tick_log_id=tick_log_id,
-        )
-
-    # ------------------------------------------------------------------
-    # Circuit-breaker helpers (called by KiteIngestor WebSocket callbacks)
-    # ------------------------------------------------------------------
-
-    def on_connected(self) -> None:
-        """Call when the WebSocket (re)connects."""
-        if self._circuit_task is not None and not self._circuit_task.done():
-            self._circuit_task.cancel()
-        self.circuit.close()
-        logger.info("TickIngestor: WebSocket connected — circuit closed")
-
-    def on_disconnected(self) -> None:
-        """Call when the WebSocket disconnects."""
-        logger.warning("TickIngestor: WebSocket disconnected — starting circuit timer")
-        loop = self._loop or asyncio.get_event_loop()
-        self._loop = loop
-        if self._circuit_task is None or self._circuit_task.done():
-            self._circuit_task = loop.create_task(self._open_circuit_after_timeout())
-
-    async def _open_circuit_after_timeout(self) -> None:
-        try:
-            await asyncio.sleep(self._circuit_timeout_secs)
-            self.circuit.open()
-            logger.error(
-                "TickIngestor: circuit OPEN after %.0fs disconnect", self._circuit_timeout_secs
-            )
-        except asyncio.CancelledError:
-            pass  # reconnected before timeout
+        return raw_event.model_copy(update={"tick_log_id": tick_log_id})
 
     # ------------------------------------------------------------------
     # Public accessors (avoid private attribute access from KiteIngestor)
@@ -171,8 +133,3 @@ class TickIngestor(AbstractRegistry):
     def get_symbol(self, token: int) -> str | None:
         """Return the trading symbol for a given instrument token, or None."""
         return self._token_symbol.get(token)
-
-    def cancel_circuit_task(self) -> None:
-        """Cancel any pending circuit-open timer (called by KiteIngestor on teardown)."""
-        if self._circuit_task is not None and not self._circuit_task.done():
-            self._circuit_task.cancel()

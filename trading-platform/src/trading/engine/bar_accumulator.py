@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -60,7 +61,15 @@ def _new_bar(sc: SymbolConfig, interval: str, event: TickEvent, bar_open: dateti
     )
 
 
-class BarAccumulator:
+class AbstractBarAccumulator(ABC):
+    """Interface for OHLCV bar state machines."""
+
+    @abstractmethod
+    def process(self, sc: SymbolConfig, interval: str, tick: TickEvent) -> CandleEvent | None:
+        """Update bar state for one tick. Returns a CandleEvent when a bar closes, None otherwise."""
+
+
+class BarAccumulator(AbstractBarAccumulator):
     """Pure in-memory OHLCV bar state. No IO, no async, no dependencies."""
 
     def __init__(self) -> None:

@@ -6,7 +6,8 @@ import os
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from anyio import sleep_forever
+from anyio import CancelScope, Event, create_task_group, fail_after, sleep, sleep_forever
+from anyio.abc import TaskGroup
 
 from trading.broker.base.broker_stream import BrokerStream
 from trading.broker.paper_broker import AbstractPriceStore
@@ -35,8 +36,15 @@ class KiteIngestor(Component):
     Lifecycle
     ---------
     _setup:   register WS callbacks → connect → wait for on_connect → subscribe tokens
-    _run:     sleep_forever (ticks arrive via callbacks)
-    _teardown: cancel circuit timer → close stream
+    _run:     inner task group for circuit timer + sleep_forever for tick callbacks
+    _teardown: cancel circuit scope → close stream
+
+    Thread safety
+    -------------
+    The Kite WebSocket fires _on_ws_* callbacks from a background thread. We
+    cache the running event loop in _setup() and use call_soon_threadsafe to
+    schedule work back onto the anyio event loop from those callbacks.
+    The anyio Event and CancelScope are only accessed from the event loop thread.
     """
 
     def __init__(
@@ -52,7 +60,9 @@ class KiteIngestor(Component):
         self._price_store = price_store
         self._connect_timeout_secs = connect_timeout_secs
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._connected: asyncio.Event | None = None
+        self._connected: Event | None = None
+        self._circuit_scope: CancelScope | None = None
+        self._task_group: TaskGroup | None = None
         self._on_tick_callbacks: list[OnTickCallback] = []
 
     def add_on_tick(self, callback: OnTickCallback) -> None:
@@ -61,7 +71,7 @@ class KiteIngestor(Component):
 
     async def _setup(self) -> None:
         self._loop = asyncio.get_running_loop()
-        self._connected = asyncio.Event()
+        self._connected = Event()
 
         self._stream.set_on_connect(self._on_ws_connect)
         self._stream.set_on_ticks(self._on_ws_ticks)
@@ -69,7 +79,8 @@ class KiteIngestor(Component):
 
         await self._stream.connect()
         try:
-            await asyncio.wait_for(self._connected.wait(), timeout=self._connect_timeout_secs)
+            with fail_after(self._connect_timeout_secs):
+                await self._connected.wait()
         except TimeoutError as err:
             raise RuntimeError(
                 f"KiteIngestor: WebSocket did not connect within {self._connect_timeout_secs}s"
@@ -83,35 +94,76 @@ class KiteIngestor(Component):
             logger.warning("KiteIngestor: no instruments configured")
 
     async def _run(self) -> None:
-        await sleep_forever()
+        async with create_task_group() as tg:
+            self._task_group = tg
+            await sleep_forever()
+        self._task_group = None
 
     async def _teardown(self) -> None:
-        self._tick_registry.cancel_circuit_task()
+        self._cancel_circuit_scope()
         await self._stream.close()
 
     # ------------------------------------------------------------------
-    # WebSocket thread callbacks
+    # Circuit breaker management (called from event loop thread only)
+    # ------------------------------------------------------------------
+
+    def _cancel_circuit_scope(self) -> None:
+        if self._circuit_scope is not None:
+            self._circuit_scope.cancel()
+            self._circuit_scope = None
+
+    async def _run_circuit_timer(self) -> None:
+        with CancelScope() as scope:
+            self._circuit_scope = scope
+            await sleep(self._tick_registry._circuit_timeout_secs)
+        if not scope.cancel_called:
+            self._tick_registry.circuit.open()
+            logger.error(
+                "KiteIngestor: circuit OPEN after %.0fs disconnect",
+                self._tick_registry._circuit_timeout_secs,
+            )
+        self._circuit_scope = None
+
+    # ------------------------------------------------------------------
+    # Event-loop-side handlers (scheduled via call_soon_threadsafe)
+    # ------------------------------------------------------------------
+
+    def _on_connected(self) -> None:
+        self._cancel_circuit_scope()
+        self._tick_registry.circuit.close()
+        if self._connected is not None:
+            self._connected.set()
+        logger.info("KiteIngestor: WebSocket connected — circuit closed")
+
+    def _schedule_tick(self, raw: Tick) -> None:
+        tg = self._task_group
+        if tg is not None:
+            tg.start_soon(self._handle_tick, raw)
+
+    def _schedule_circuit_timer(self) -> None:
+        tg = self._task_group
+        if tg is not None and (self._circuit_scope is None or self._circuit_scope.cancel_called):
+            tg.start_soon(self._run_circuit_timer)
+
+    # ------------------------------------------------------------------
+    # WebSocket thread callbacks (called from broker's background thread)
     # ------------------------------------------------------------------
 
     def _on_ws_connect(self) -> None:
         assert self._loop is not None
         self._loop.call_soon_threadsafe(self._on_connected)
 
-    def _on_connected(self) -> None:
-        if self._connected is not None:
-            self._connected.set()
-        self._tick_registry.on_connected()
-
     def _on_ws_ticks(self, ticks: list[Tick]) -> None:
-        if self._loop is None:
+        loop = self._loop
+        if loop is None:
             return
         for tick in ticks:
-            asyncio.run_coroutine_threadsafe(self._handle_tick(tick), self._loop)
+            loop.call_soon_threadsafe(self._schedule_tick, tick)
 
     def _on_ws_disconnect(self, code: int, reason: str) -> None:
         logger.warning("KiteIngestor: disconnected code=%s reason=%r", code, reason)
         assert self._loop is not None
-        self._loop.call_soon_threadsafe(self._tick_registry.on_disconnected)
+        self._loop.call_soon_threadsafe(self._schedule_circuit_timer)
 
     async def _handle_tick(self, raw: Tick) -> None:
         thread_id.set(os.urandom(4).hex())

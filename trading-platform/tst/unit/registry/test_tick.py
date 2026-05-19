@@ -1,12 +1,12 @@
-"""Tests for data/realtime.py — KiteIngestor"""
+"""Tests for engine/tick_ingestor.py and engine/kite_ingestor.py"""
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
+from anyio import create_task_group, sleep
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from trading.broker.base.broker_stream import BrokerStream
@@ -114,6 +114,18 @@ def ingestor(stream: MockBrokerStream, tick_registry: TickIngestor) -> KiteInges
 
 
 # ---------------------------------------------------------------------------
+# Helper: start ingestor and run a block, then stop
+# ---------------------------------------------------------------------------
+
+
+async def _with_ingestor(ingestor: KiteIngestor, body) -> None:  # type: ignore[type-arg]
+    async with create_task_group() as tg:
+        await tg.start(ingestor.start)
+        await body()
+        await ingestor.stop()
+
+
+# ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
@@ -122,13 +134,11 @@ async def test_setup_subscribes_to_tokens(stream: MockBrokerStream, engine: Asyn
     reg = make_tick_registry(stream, engine, 10, 20, 30)
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        assert set(stream.subscribed_tokens) == {10, 20, 30}
 
-    assert set(stream.subscribed_tokens) == {10, 20, 30}
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 # ---------------------------------------------------------------------------
@@ -139,18 +149,13 @@ async def test_setup_subscribes_to_tokens(stream: MockBrokerStream, engine: Asyn
 async def test_valid_tick_processed_by_registry(
     stream: MockBrokerStream, tick_registry: TickIngestor, ingestor: KiteIngestor
 ) -> None:
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_ticks([make_raw_tick(token=1, price=250.0)])
+        await sleep(0.05)
+        assert tick_registry.circuit.is_open() is False
 
-    stream.fire_ticks([make_raw_tick(token=1, price=250.0)])
-    await asyncio.sleep(0.05)
-
-    # The tick was for token=1 which is in the registry; no assertion on bus but
-    # circuit should still be closed (no disconnect happened)
-    assert tick_registry.circuit.is_open() is False
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 async def test_tick_with_zero_price_returns_none_from_registry(engine: AsyncEngine) -> None:
@@ -204,15 +209,7 @@ async def test_instrument_type_correct_on_tick_event(engine: AsyncEngine) -> Non
 async def test_circuit_open_after_timeout(
     stream: MockBrokerStream, tick_registry: TickIngestor
 ) -> None:
-    """After on_disconnected(), circuit opens after the timeout task fires."""
-    # Manually shorten the timeout for the test by directly triggering
-    # and manually awaiting the internal task
-    tick_registry.on_disconnected()
-    # Override the timeout task to fire immediately
-    if tick_registry._circuit_task is not None:
-        tick_registry._circuit_task.cancel()
-
-    # Open the circuit directly (simulating what the timer would do)
+    """Circuit opens when manually triggered (direct open)."""
     tick_registry.circuit.open()
     assert tick_registry.circuit.is_open() is True
 
@@ -221,21 +218,17 @@ async def test_reconnect_before_timeout_clears_circuit(
     stream: MockBrokerStream, tick_registry: TickIngestor, ingestor: KiteIngestor
 ) -> None:
     """Reconnect cancels the pending circuit-open task and closes the circuit."""
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_disconnect()
+        await sleep(0.01)  # well before circuit timeout
+        # Simulate reconnect via the stream callback
+        if stream._on_connect:
+            stream._on_connect()
+        await sleep(0.05)
+        assert tick_registry.circuit.is_open() is False
 
-    stream.fire_disconnect()
-    await asyncio.sleep(0.01)  # well before circuit timeout
-
-    # Simulate reconnect
-    if stream._on_connect:
-        stream._on_connect()
-    await asyncio.sleep(0.05)
-
-    assert tick_registry.circuit.is_open() is False
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 async def test_disconnect_sets_circuit_after_timeout(engine: AsyncEngine) -> None:
@@ -252,16 +245,14 @@ async def test_disconnect_sets_circuit_after_timeout(engine: AsyncEngine) -> Non
     )
 
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
 
-    stream.fire_disconnect()
-    await asyncio.sleep(0.15)  # wait past 0.05s timeout
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_disconnect()
+        await sleep(0.15)  # wait past 0.05s timeout
+        assert reg.circuit.is_open() is True
 
-    assert reg.circuit.is_open() is True
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 # ---------------------------------------------------------------------------
@@ -270,93 +261,79 @@ async def test_disconnect_sets_circuit_after_timeout(engine: AsyncEngine) -> Non
 
 
 async def test_stop_closes_stream(stream: MockBrokerStream, ingestor: KiteIngestor) -> None:
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
 
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
-
+    await _with_ingestor(ingestor, _check)
     assert stream.closed
 
 
-async def test_teardown_cancels_pending_circuit_task(engine: AsyncEngine) -> None:
-    """Covers line 71: _teardown cancels a pending circuit timer on disconnect."""
-    import trading.engine.tick_ingestor as tick_mod
+async def test_teardown_cancels_pending_circuit_scope(engine: AsyncEngine) -> None:
+    """_teardown cancels a pending circuit timer on disconnect."""
+    stream = MockBrokerStream()
+    instruments = make_instruments(1)
+    sf = build_session_factory(engine)
+    config = TickConfig(instruments=instruments, exec_id="paper")
+    reg = TickIngestor(
+        config=config,
+        stream=stream,
+        audit=AuditStore(sf),
+        circuit_timeout_secs=60.0,  # long timeout — won't complete before teardown
+    )
+    ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
-    original = tick_mod._CIRCUIT_TIMEOUT_SECS
-    tick_mod._CIRCUIT_TIMEOUT_SECS = 60.0  # long timeout — task won't complete before teardown
-
-    try:
-        stream = MockBrokerStream()
-        reg = make_tick_registry(stream, engine, 1)
-        ingestor = KiteIngestor(stream=stream, tick_registry=reg)
-
-        task = asyncio.get_event_loop().create_task(ingestor.start())
-        await asyncio.sleep(0.05)
-
-        # Trigger disconnect → creates a circuit timer task (60s timeout)
+    async def _check() -> None:
+        await sleep(0.05)
         stream.fire_disconnect()
-        await asyncio.sleep(0.01)
+        await sleep(0.01)
+        # Stop immediately — _teardown cancels the still-pending circuit scope
 
-        # Stop immediately — _teardown cancels the still-pending circuit task
-        await ingestor.stop()
-        await asyncio.gather(task, return_exceptions=True)
-
-        # Teardown completed without error — the cancel path was exercised
-        assert stream.closed is True
-    finally:
-        tick_mod._CIRCUIT_TIMEOUT_SECS = original  # type: ignore[assignment]
+    await _with_ingestor(ingestor, _check)
+    # Teardown completed without error — the cancel path was exercised
+    assert stream.closed is True
 
 
 async def test_tick_missing_instrument_token_returns_none(engine: AsyncEngine) -> None:
-    """Covers line 99: raw dict has no 'instrument_token' key → returns None."""
+    """raw dict has no 'instrument_token' key → returns None."""
     stream = MockBrokerStream()
     reg = make_tick_registry(stream, engine, 1)
-    result = await reg.handle({"last_price": 100.0})  # no instrument_token key
+    result = await reg.handle({"last_price": 100.0})
     assert result is None
 
 
 async def test_ingestor_no_instruments_logs_warning(engine: AsyncEngine) -> None:
-    """Covers line 63: KiteIngestor setup with no configured instruments."""
+    """KiteIngestor setup with no configured instruments."""
     stream = MockBrokerStream()
-    # Create a tick registry with no instruments
     sf = build_session_factory(engine)
     config = TickConfig(instruments=[], exec_id="paper")
     reg = TickIngestor(config=config, stream=stream, audit=AuditStore(sf))
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        assert stream.subscribed_tokens == []
 
-    assert stream.subscribed_tokens == []  # subscribe was not called
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 async def test_ingestor_handle_tick_unknown_token_returns_none(engine: AsyncEngine) -> None:
-    """Covers line 101: _handle_tick when tick_registry returns None (unknown token)."""
+    """_handle_tick when tick_registry returns None (unknown token)."""
     stream = MockBrokerStream()
     reg = make_tick_registry(stream, engine, 1)
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_ticks([make_raw_tick(token=999, price=100.0)])
+        await sleep(0.05)
 
-    # Fire a tick for an unknown token — _handle_tick returns early at line 101
-    stream.fire_ticks([make_raw_tick(token=999, price=100.0)])
-    await asyncio.sleep(0.05)
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 async def test_tick_registry_db_persist_failure_returns_tick_with_minus_one_id(
     engine: AsyncEngine,
 ) -> None:
-    """Covers lines 121-123: audit.log_tick() raises → tick_log_id set to -1 but TickEvent returned."""
-    from unittest.mock import AsyncMock
-
+    """audit.log_tick() raises → tick_log_id set to -1 but TickEvent returned."""
     from trading.storage.stores.audit import AbstractAuditStore
 
     class _FailingAuditStore(AbstractAuditStore):
@@ -380,7 +357,7 @@ async def test_tick_registry_db_persist_failure_returns_tick_with_minus_one_id(
 
 
 async def test_ingestor_on_tick_callback_exception_is_swallowed(engine: AsyncEngine) -> None:
-    """Covers lines 130-133: on_tick callback that raises is caught and doesn't crash."""
+    """on_tick callback that raises is caught and doesn't crash."""
     stream = MockBrokerStream()
     reg = make_tick_registry(stream, engine, 1)
 
@@ -393,32 +370,28 @@ async def test_ingestor_on_tick_callback_exception_is_swallowed(engine: AsyncEng
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
     ingestor.add_on_tick(_failing_callback)
 
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_ticks([make_raw_tick(token=1, price=100.0)])
+        await sleep(0.05)
+        assert "called" in calls
 
-    stream.fire_ticks([make_raw_tick(token=1, price=100.0)])
-    await asyncio.sleep(0.05)
-
-    # Callback should have been called, exception should be swallowed
-    assert "called" in calls
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)
 
 
 async def test_ingestor_on_ws_ticks_no_op_when_loop_is_none(engine: AsyncEngine) -> None:
-    """Covers line 107: _on_ws_ticks returns early when _loop is None."""
+    """_on_ws_ticks returns early when _loop is None (before _setup)."""
     stream = MockBrokerStream()
     reg = make_tick_registry(stream, engine, 1)
     ingestor = KiteIngestor(stream=stream, tick_registry=reg)
 
     # _loop is None before _setup() is called — fire_ticks should be a no-op
     stream.fire_ticks([make_raw_tick(token=1, price=100.0)])
-    # No crash — returns early at the `if self._loop is None: return` check
+    # No crash
 
 
 async def test_ingestor_connect_timeout_raises_runtime_error(engine: AsyncEngine) -> None:
-    """Covers lines 73-74: TimeoutError in _setup() is re-raised as RuntimeError."""
+    """TimeoutError in _setup() is re-raised as RuntimeError."""
 
     class _NeverConnectsStream(MockBrokerStream):
         async def connect(self) -> None:
@@ -433,7 +406,7 @@ async def test_ingestor_connect_timeout_raises_runtime_error(engine: AsyncEngine
 
 
 async def test_ingestor_updates_price_store_on_valid_tick(engine: AsyncEngine) -> None:
-    """Covers lines 105-107: price_store is updated when tick is valid."""
+    """price_store is updated when tick is valid."""
 
     class _MockPriceStore(AbstractPriceStore):
         def __init__(self) -> None:
@@ -450,13 +423,10 @@ async def test_ingestor_updates_price_store_on_valid_tick(engine: AsyncEngine) -
     price_store = _MockPriceStore()
     ingestor = KiteIngestor(stream=stream, tick_registry=reg, price_store=price_store)
 
-    task = asyncio.get_event_loop().create_task(ingestor.start())
-    await asyncio.sleep(0.05)
+    async def _check() -> None:
+        await sleep(0.05)
+        stream.fire_ticks([make_raw_tick(token=1, price=123.4)])
+        await sleep(0.05)
+        assert price_store.updates.get("SYM1") == pytest.approx(123.4)
 
-    stream.fire_ticks([make_raw_tick(token=1, price=123.4)])
-    await asyncio.sleep(0.05)
-
-    assert price_store.updates.get("SYM1") == pytest.approx(123.4)
-
-    await ingestor.stop()
-    await asyncio.gather(task, return_exceptions=True)
+    await _with_ingestor(ingestor, _check)

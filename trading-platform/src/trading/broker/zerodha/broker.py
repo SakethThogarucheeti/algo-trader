@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -129,10 +128,10 @@ class ZerodhaBroker(Broker):
             )
 
         try:
-            order_id = await asyncio.wait_for(
-                asyncio.to_thread(_place),
-                timeout=self._order_timeout_secs,
-            )
+            from anyio import fail_after, to_thread
+
+            with fail_after(self._order_timeout_secs):
+                order_id = await to_thread.run_sync(_place)
         except TimeoutError as err:
             raise RuntimeError(
                 f"ZerodhaBroker: place_order timed out after {self._order_timeout_secs}s "
