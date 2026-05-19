@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import time
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import BaseModel, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -96,6 +97,7 @@ class Settings(BaseSettings):
     dashboard_enabled: bool = True
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = 8081
+    results_dir: Path = Field(default=Path("results"))
 
     # ------------------------------------------------------------------ #
     # Timezone                                                            #

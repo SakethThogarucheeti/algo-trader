@@ -74,6 +74,10 @@ class WalkForwardReport(SessionReport):
             "aggregate_max_drawdown": self.aggregate_max_drawdown,
             "aggregate_win_rate": self.aggregate_win_rate,
             "windows": [w.to_dict() for w in self.windows],
+            "combined_equity_curve": [
+                [row["date"].isoformat() if hasattr(row["date"], "isoformat") else str(row["date"]), row["equity"]]
+                for row in self.combined_equity_curve.iter_rows(named=True)
+            ],
         }
 
     def to_html(self) -> str:

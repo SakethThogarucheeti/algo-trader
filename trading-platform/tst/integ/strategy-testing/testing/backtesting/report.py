@@ -113,6 +113,10 @@ class BacktestReport(SessionReport):
             "calmar_ratio": self.calmar_ratio,
             "total_trades": self.total_trades,
             "trades": [t.to_dict() for t in self.trades],
+            "equity_curve": [
+                [row["date"].isoformat() if hasattr(row["date"], "isoformat") else str(row["date"]), row["equity"]]
+                for row in self.equity_curve.iter_rows(named=True)
+            ],
         }
 
     def to_html(self) -> str:

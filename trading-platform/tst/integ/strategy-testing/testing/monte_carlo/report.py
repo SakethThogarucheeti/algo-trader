@@ -64,6 +64,8 @@ class MonteCarloReport(SessionReport):
             "percentile_5_return": self.percentile_5_return,
             "percentile_95_return": self.percentile_95_return,
             "median_drawdown": self.median_drawdown,
+            "return_distribution": self.return_distribution.to_list(),
+            "drawdown_distribution": self.drawdown_distribution.to_list(),
         }
 
     def to_html(self) -> str:
