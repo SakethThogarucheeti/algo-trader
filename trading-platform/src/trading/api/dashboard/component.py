@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.clock import SYSTEM_CLOCK, Clock
 from trading.engine.component import Component
-from trading.monitoring.dashboard.app import build_app
+from trading.api.dashboard.app import build_app
 
 logger = logging.getLogger(__name__)
 
