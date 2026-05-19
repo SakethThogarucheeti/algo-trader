@@ -13,7 +13,7 @@ from trading.core.pipeline import AlgoPipeline, TickPipeline
 from trading.di.providers.strategy import make_strategy
 from trading.engine.candle_aggregator import CandleAggregator, CandleAggregatorComponent, CandleConfig
 from trading.engine.heartbeat import HeartbeatMonitor
-from trading.monitoring.dashboard.component import DashboardServer
+from trading.api.dashboard.component import DashboardServer
 from trading.engine.kite_ingestor import KiteIngestor
 from trading.engine.runtime import AbstractRuntime, Runtime
 from trading.engine.scheduler import Scheduler
@@ -86,7 +86,7 @@ class ComponentProvider(Provider):
         sf: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> HeartbeatMonitor:
-        from trading.monitoring.telegram import TelegramAlerter
+        from trading.api.telegram import TelegramAlerter
 
         alerter = TelegramAlerter(settings)
 
@@ -302,7 +302,7 @@ class ComponentProvider(Provider):
     ) -> DashboardServer | None:
         if not settings.dashboard_enabled:
             return None
-        from trading.monitoring.dashboard.component import DashboardServer
+        from trading.api.dashboard.component import DashboardServer
 
         return DashboardServer(
             session_factory=sf,

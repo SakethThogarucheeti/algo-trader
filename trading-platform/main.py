@@ -30,7 +30,7 @@ from anyio import sleep_forever
 from trading.di.container import build_container
 from trading.engine.runtime import AbstractRuntime
 from trading.engine.scheduler import Scheduler
-from trading.monitoring.dashboard.component import DashboardServer
+from trading.api.dashboard.component import DashboardServer
 
 _LOG_DIR = Path("logs")
 _LOG_DIR.mkdir(exist_ok=True)
@@ -88,16 +88,24 @@ def _check_port_free(port: int) -> None:
 
     # Find the owning PID on Windows for a helpful error message
     pid_hint = ""
+    kill_hint = ""
     if sys.platform == "win32":
         result = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
         for line in result.stdout.splitlines():
             if f":{port} " in line and "LISTENING" in line:
-                pid_hint = f" (PID {line.split()[-1]})"
+                pid = line.split()[-1]
+                pid_hint = f" (PID {pid})"
+                kill_hint = f"\n  Kill it:  taskkill /PID {pid} /F"
                 break
+    else:
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+        pid = result.stdout.strip()
+        if pid:
+            pid_hint = f" (PID {pid})"
+            kill_hint = f"\n  Kill it:  kill -9 {pid}"
 
     sys.exit(
-        f"ERROR: port {port} is already in use{pid_hint}.\n"
-        f"Stop the process holding it and rerun:  uv run start"
+        f"ERROR: port {port} is already in use{pid_hint}.{kill_hint}"
     )
 
 

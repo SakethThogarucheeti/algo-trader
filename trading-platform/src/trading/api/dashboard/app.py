@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,12 +17,11 @@ from trading.core.models import AlgoConfig, Candle, DecisionLog, Heartbeat, Orde
 
 logger = logging.getLogger(__name__)
 
-_STATIC_DIR = Path(__file__).parent / "static"
-
 
 def build_app(
     session_factory: async_sessionmaker[AsyncSession],
     clock: Clock = SYSTEM_CLOCK,
+    results_dir: Path | None = None,
 ) -> FastAPI:
     """
     Build the monitoring dashboard FastAPI application.
@@ -38,18 +37,19 @@ def build_app(
     """
     app = FastAPI(title="Algo Trading Dashboard", docs_url=None, redoc_url=None)
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=True,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+
+    _results_dir = results_dir or Path("results")
+
     def _today_start() -> datetime:
         now = clock.now()
         return now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # ------------------------------------------------------------------
-    # Root — serve the single-page dashboard
-    # ------------------------------------------------------------------
-
-    @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        html = (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        return HTMLResponse(content=html)
 
     # ------------------------------------------------------------------
     # GET /api/sessions — list all distinct session_ids (for session selector)
@@ -361,13 +361,86 @@ def build_app(
                         yield f"data: {payload}\n\n"
                 except Exception as exc:
                     logger.debug("SSE generator error: %s", exc)
-                await asyncio.sleep(2)
+                from anyio import sleep as _asleep
+                await _asleep(2)
 
         return StreamingResponse(
             _event_generator(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    # ------------------------------------------------------------------
+    # GET /api/reports/sessions — list all report sessions from results_dir
+    # ------------------------------------------------------------------
+
+    @app.get("/api/reports/sessions")
+    async def get_report_sessions() -> JSONResponse:
+        sessions: list[dict[str, object]] = []
+        if not _results_dir.exists():
+            return JSONResponse(content=sessions)
+        for report_file in sorted(_results_dir.glob("*/report.json")):
+            try:
+                data = json.loads(report_file.read_text(encoding="utf-8"))
+                sessions.append(
+                    {
+                        "session_id": data.get("session_id", ""),
+                        "session_type": data.get("session_type", ""),
+                        "algo_name": data.get("algo_name", ""),
+                        "started_at": data.get("started_at", ""),
+                        "finished_at": data.get("finished_at", ""),
+                    }
+                )
+            except Exception:
+                logger.debug("Skipping malformed report: %s", report_file)
+        return JSONResponse(content=sessions)
+
+    # ------------------------------------------------------------------
+    # GET /api/reports/{session_id} — full report JSON for one session
+    # ------------------------------------------------------------------
+
+    @app.get("/api/reports/{session_id}")
+    async def get_report(session_id: str) -> JSONResponse:
+        report_file = _results_dir / session_id / "report.json"
+        if not report_file.exists():
+            raise HTTPException(status_code=404, detail=f"Report not found: {session_id}")
+        data = json.loads(report_file.read_text(encoding="utf-8"))
+        return JSONResponse(content=data)
+
+    # ------------------------------------------------------------------
+    # GET /api/reports/live?period=day|week|month&date=YYYY-MM-DD
+    # ------------------------------------------------------------------
+
+    @app.get("/api/reports/live")
+    async def get_live_report(
+        period: str = "day",
+        date: str = "",
+    ) -> JSONResponse:
+        from trading.reports.engine import fetch_report_data
+
+        if date:
+            target_date = datetime.fromisoformat(date).replace(tzinfo=UTC)
+        else:
+            target_date = clock.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if period == "day":
+            start = target_date
+            end = target_date.replace(hour=23, minute=59, second=59)
+        elif period == "week":
+            # Monday of the target week
+            start = target_date - __import__("datetime").timedelta(days=target_date.weekday())
+            end = start + __import__("datetime").timedelta(days=6, hours=23, minutes=59, seconds=59)
+        elif period == "month":
+            import calendar
+
+            start = target_date.replace(day=1)
+            last_day = calendar.monthrange(target_date.year, target_date.month)[1]
+            end = target_date.replace(day=last_day, hour=23, minute=59, second=59)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown period: {period!r}")
+
+        data = await fetch_report_data(start, end, session_factory)
+        return JSONResponse(content=data)
 
     return app
 
