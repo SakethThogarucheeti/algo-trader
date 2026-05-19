@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trading.core.clock import SimulatedClock
-from trading.monitoring.dashboard.app import build_app
+from trading.api.dashboard.app import build_app
 
 # ---------------------------------------------------------------------------
 # Helpers — build a mock session_factory
@@ -316,7 +316,7 @@ async def test_algos_with_data():
 async def test_dashboard_server_setup_creates_uvicorn_server():
     from unittest.mock import patch
 
-    from trading.monitoring.dashboard.component import DashboardServer
+    from trading.api.dashboard.component import DashboardServer
 
     sf = _mock_sf(scalars_return=[])
     server = DashboardServer(session_factory=sf, host="127.0.0.1", port=8999)
@@ -333,7 +333,7 @@ async def test_dashboard_server_setup_creates_uvicorn_server():
 
 @pytest.mark.asyncio
 async def test_dashboard_server_teardown_sets_should_exit():
-    from trading.monitoring.dashboard.component import DashboardServer
+    from trading.api.dashboard.component import DashboardServer
 
     sf = _mock_sf(scalars_return=[])
     server = DashboardServer(session_factory=sf)
@@ -349,7 +349,7 @@ async def test_dashboard_server_teardown_sets_should_exit():
 
 @pytest.mark.asyncio
 async def test_dashboard_server_teardown_noop_when_no_server():
-    from trading.monitoring.dashboard.component import DashboardServer
+    from trading.api.dashboard.component import DashboardServer
 
     sf = _mock_sf(scalars_return=[])
     server = DashboardServer(session_factory=sf)

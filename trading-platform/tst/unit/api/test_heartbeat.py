@@ -15,7 +15,7 @@ from trading.config.settings import Settings
 from trading.core.database import build_session_factory, init_db
 from trading.core.models import Heartbeat
 from trading.engine.heartbeat import HeartbeatMonitor
-from trading.monitoring.telegram import TelegramAlerter
+from trading.api.telegram import TelegramAlerter
 from trading.storage.stores.heartbeat import HeartbeatStore
 
 
@@ -144,7 +144,7 @@ async def test_http_429_waits_retry_after_then_retries() -> None:
         async def fake_sleep(secs: float) -> None:
             slept.append(int(secs))
 
-        with patch("asyncio.sleep", fake_sleep):
+        with patch("trading.api.telegram.sleep", fake_sleep):
             await alerter.send_alert("429 test", "test")
 
     assert 10 in slept
@@ -159,7 +159,7 @@ async def test_timeout_retried() -> None:
         mock_client_class.return_value.__aenter__.return_value = mock_client
         mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("trading.api.telegram.sleep", new_callable=AsyncMock):
             await alerter.send_alert("timeout test", "event")
 
     # 3 attempts
