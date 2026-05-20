@@ -1,6 +1,0 @@
-{
-  "typeCheckingMode": "strict",
-  "reportMissingTypeStubs": false,
-  "reportUnusedFunction": false,
-  "exclude": ["**/__pycache__", "**/node_modules", "**/.*"]
-}
