@@ -15,8 +15,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-PLATFORM_DIR = ROOT / "trading-platform"
-DASHBOARD_DIR = ROOT / "trading-dashboard"
+TRADING_DIR = ROOT.parent
+PLATFORM_DIR = TRADING_DIR / "trading-platform"
+DASHBOARD_DIR = TRADING_DIR / "trading-dashboard"
 
 
 def _wait_port(port: int, name: str, timeout: int = 60) -> None:
