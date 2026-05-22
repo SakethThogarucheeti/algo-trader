@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trading
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  platform:
+    build:
+      context: .
+      dockerfile: trading-platform/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - trading-platform/.env
+    environment:
+      # Override DB/Redis URLs to use Docker service names
+      POSTGRES_URL: postgresql+asyncpg://trading:trading@postgres:5432/trading
+      REDIS_URL: redis://redis:6379
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "8081"
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./trading-platform/.env:/workspace/trading-platform/.env
+      - platform_logs:/workspace/trading-platform/logs
+      - platform_results:/workspace/trading-platform/results
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/api/ping')\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: trading-dashboard/Dockerfile
+      args:
+        VITE_API_URL: http://platform:8081
+    restart: unless-stopped
+    depends_on:
+      platform:
+        condition: service_healthy
+    environment:
+      VITE_API_URL: http://platform:8081
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  redis_data:
+  platform_logs:
+  platform_results:

@@ -1,0 +1,29 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/.pytest_cache/
+**/*.egg-info/
+**/dist/
+**/build/
+
+# Node
+trading-dashboard/node_modules/
+trading-dashboard/.next/
+trading-dashboard/.turbo/
+
+# Logs & data
+trading-platform/logs/
+trading-platform/results/
+
+# Dev artifacts
+**/.env.local
+**/.coverage
+**/.mypy_cache/
+**/.ruff_cache/
+**/htmlcov/
+
+# Git
+.git/
+.gitignore
