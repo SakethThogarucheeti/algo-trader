@@ -76,10 +76,8 @@ def main() -> None:
         _wait_port(3000, "trading-dashboard")
 
         print()
-        print("┌─────────────────────────────────────────────┐")
-        print("│  trading-platform  →  http://localhost:8081 │")
-        print("│  trading-dashboard →  http://localhost:3000 │")
-        print("└─────────────────────────────────────────────┘")
+        print("  trading-platform  ->  http://localhost:8081")
+        print("  trading-dashboard ->  http://localhost:3000")
         print()
         print("Press Ctrl+C to stop.")
 

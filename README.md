@@ -2,13 +2,23 @@
 
 Infrastructure and orchestration for a live algorithmic trading system targeting Indian equity markets (NSE) via the Zerodha/Kite broker.
 
-This repo contains only the root-level glue: `docker-compose.yml` for production deployment and `dev.py`/`dev.ps1` for local development. The actual application code lives in three separate repos:
+This repo contains only the root-level glue: `docker-compose.yml` for production deployment and `dev.py`/`dev.ps1` for local development. The two services it runs are separate repos, cloned as siblings:
 
 | Repo | Description |
 |------|-------------|
-| [trading-platform](https://github.com/SakethThogarucheeti/trading-platform) | Python trading engine, strategy execution, and REST API |
-| [trading-dashboard](https://github.com/SakethThogarucheeti/trading-dashboard) | Next.js live monitoring dashboard |
+| [trading-platform](https://github.com/SakethThogarucheeti/trading-platform) | Python trading engine — pipeline orchestration, broker adapters, REST API. A thin wrapper: strategy and risk-filter *content* live in the SDKs below, not here. |
+| [trading-dashboard](https://github.com/SakethThogarucheeti/trading-dashboard) | React (TanStack Start) live monitoring dashboard — proxies all data through trading-platform's API, no backend of its own |
+
+trading-platform pulls in the rest of its own dependency tree as pinned packages — none of these need to be cloned separately:
+
+| Package | Description |
+|---------|-------------|
+| [trading-types](https://github.com/SakethThogarucheeti/trading-types) | Shared domain types (event models, enums, `Clock`) — the common root every other package depends on |
 | [quantindicators](https://github.com/SakethThogarucheeti/quantindicators) | Polars-based technical indicator library |
+| [trading-strategy-sdk](https://github.com/SakethThogarucheeti/trading-strategy-sdk) | `Strategy` ABC, concrete strategies, factory registry |
+| [trading-risk-sdk](https://github.com/SakethThogarucheeti/trading-risk-sdk) | Risk gates, position sizer, policy protocols |
+
+Separately, [trading-integ-tests](https://github.com/SakethThogarucheeti/trading-integ-tests) is a sibling repo (cloned locally, path-depends on trading-platform) holding backtesting, Monte Carlo, walk-forward, and system-level integration tests — not part of the runtime services this repo orchestrates, but useful to have checked out alongside them.
 
 ## Architecture
 
@@ -20,7 +30,7 @@ This repo contains only the root-level glue: `docker-compose.yml` for production
                │                    │
     ┌──────────▼──────────┐  ┌──────▼──────────────┐
     │  trading-platform   │  │  trading-dashboard   │
-    │  Python / FastAPI   │◄─┤  Next.js / React     │
+    │  Python / FastAPI   │◄─┤  React / TanStack    │
     │  :8081              │  │  :3000               │
     └──────────┬──────────┘  └─────────────────────-┘
                │
@@ -41,14 +51,15 @@ The trading-platform polls Zerodha's KiteConnect WebSocket for live tick data, r
 
 ## Setup
 
-**1. Clone all repos into the same parent directory:**
+**1. Clone the two service repos into the same parent directory:**
 
 ```bash
 git clone https://github.com/SakethThogarucheeti/algo-trader
 git clone https://github.com/SakethThogarucheeti/trading-platform
 git clone https://github.com/SakethThogarucheeti/trading-dashboard
-git clone https://github.com/SakethThogarucheeti/quantindicators
 ```
+
+`quantindicators`, `trading-types`, `trading-strategy-sdk`, and `trading-risk-sdk` do **not** need cloning — `uv sync` pulls them automatically as pinned git dependencies of trading-platform. Only clone [trading-integ-tests](https://github.com/SakethThogarucheeti/trading-integ-tests) separately if you're running its backtesting/integration suites.
 
 Your directory structure should look like:
 
@@ -56,8 +67,7 @@ Your directory structure should look like:
 workspace/
 ├── algo-trader/
 ├── trading-platform/
-├── trading-dashboard/
-└── quantindicators/
+└── trading-dashboard/
 ```
 
 **2. Install dependencies:**
