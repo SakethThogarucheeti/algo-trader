@@ -18,7 +18,12 @@ trading-platform pulls in the rest of its own dependency tree as pinned packages
 | [trading-strategy-sdk](https://github.com/SakethThogarucheeti/trading-strategy-sdk) | `Strategy` ABC, concrete strategies, factory registry |
 | [trading-risk-sdk](https://github.com/SakethThogarucheeti/trading-risk-sdk) | Risk gates, position sizer, policy protocols |
 
-Separately, [trading-integ-tests](https://github.com/SakethThogarucheeti/trading-integ-tests) is a sibling repo (cloned locally, path-depends on trading-platform) holding backtesting, Monte Carlo, walk-forward, and system-level integration tests — not part of the runtime services this repo orchestrates, but useful to have checked out alongside them.
+Two more sibling repos round out the workspace — neither is part of the runtime services this repo orchestrates, but both are useful to have checked out alongside them:
+
+| Repo | Description |
+|------|-------------|
+| [trading-integ-tests](https://github.com/SakethThogarucheeti/trading-integ-tests) | Backtesting, Monte Carlo, walk-forward, and system-level integration tests. Path-depends on trading-platform (editable local install), so it must be cloned as a sibling directory, not pulled in via `uv sync`. |
+| [trading-research](https://github.com/SakethThogarucheeti/trading-research) | Standalone CLI (`research backtest` / `walk-forward` / `monte-carlo`) for strategy research, driving the same trading-platform pipeline classes against pinned package versions. Shareable independently of this workspace — no path deps. |
 
 ## Architecture
 
@@ -51,6 +56,8 @@ The trading-platform polls Zerodha's KiteConnect WebSocket for live tick data, r
 
 ## Setup
 
+### Just running the live system
+
 **1. Clone the two service repos into the same parent directory:**
 
 ```bash
@@ -59,7 +66,7 @@ git clone https://github.com/SakethThogarucheeti/trading-platform
 git clone https://github.com/SakethThogarucheeti/trading-dashboard
 ```
 
-`quantindicators`, `trading-types`, `trading-strategy-sdk`, and `trading-risk-sdk` do **not** need cloning — `uv sync` pulls them automatically as pinned git dependencies of trading-platform. Only clone [trading-integ-tests](https://github.com/SakethThogarucheeti/trading-integ-tests) separately if you're running its backtesting/integration suites.
+`quantindicators`, `trading-types`, `trading-strategy-sdk`, and `trading-risk-sdk` do **not** need cloning — `uv sync` pulls them automatically as pinned git dependencies of trading-platform.
 
 Your directory structure should look like:
 
@@ -87,6 +94,46 @@ cp trading-platform/.env.example trading-platform/.env
 ```bash
 cp trading-dashboard/.env.local.example trading-dashboard/.env.local
 ```
+
+### Full workspace (research, integration tests, or SDK development)
+
+Clone whichever of these you need as additional siblings of `algo-trader`:
+
+```bash
+git clone https://github.com/SakethThogarucheeti/trading-integ-tests
+git clone https://github.com/SakethThogarucheeti/trading-research
+
+# only needed if you're developing the SDKs/libraries themselves, not just
+# consuming them — otherwise uv sync pulls pinned versions automatically
+git clone https://github.com/SakethThogarucheeti/trading-types
+git clone https://github.com/SakethThogarucheeti/quantindicators
+git clone https://github.com/SakethThogarucheeti/trading-strategy-sdk
+git clone https://github.com/SakethThogarucheeti/trading-risk-sdk
+```
+
+Full workspace layout:
+
+```
+workspace/
+├── algo-trader/
+├── trading-platform/
+├── trading-dashboard/
+├── trading-integ-tests/
+├── trading-research/
+├── trading-types/
+├── quantindicators/
+├── trading-strategy-sdk/
+└── trading-risk-sdk/
+```
+
+Each has its own `uv sync`:
+
+```bash
+cd trading-integ-tests/strategy && uv sync   # path-depends on trading-platform, editable
+cd ../../trading-research && uv sync          # pinned deps, fully standalone
+```
+
+The four SDK/library repos (`trading-types`, `quantindicators`, `trading-strategy-sdk`, `trading-risk-sdk`) are plain `uv` packages — `cd <repo> && uv sync` and edit as normal. They aren't wired into the other repos via local paths, so a change made there won't be picked up elsewhere until it's tagged and the consuming repo's pin (in `pyproject.toml` under `[tool.uv.sources]`) is bumped to the new tag.
 
 ## Running
 
